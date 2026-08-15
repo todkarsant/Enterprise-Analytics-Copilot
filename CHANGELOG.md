@@ -1,23 +1,13 @@
 # Changelog
 
-## V0.2.0 — Production-oriented NL2SQL foundation
+## 0.2.2
 
-- Added business-aware schema retrieval.
-- Added provider abstraction for Mock, Ollama and Azure OpenAI.
-- Added bounded SQL repair loop.
-- Added SQLGlot AST validation and allow-list enforcement.
-- Added read-only execution boundary.
-- Added TTL query-result caching.
-- Added token/cost metrics where provider usage metadata exists.
-- Added node-level trace.
-- Added evaluation benchmark and engineering tests.
-- Added Docker Compose local deployment.
-- Added HLD, LLD, evaluation and interview documentation.
+- Isolated pytest from the developer's `.env` by forcing the Mock LLM provider.
+- Added deterministic API assertions for the mock provider.
+- Added request validation coverage.
+- Documented test execution from the repository root.
 
-## V0.2.1 — Runtime hardening
+## 0.2.1
 
-- Fixed Ollama JSON parsing for fenced/extra-text responses.
-- Added deterministic answer fallback so an LLM summarization failure does not break a valid SQL result.
-- Avoided unnecessary summarization calls when SQL returns no rows.
-- Added dataset-relative handling for "last month" in the deterministic provider.
-- Strengthened the Ollama prompt around SQLite date semantics and dataset-relative time.
+- Added robust Ollama JSON parsing and deterministic answer fallback.
+- Improved relative-date SQL guidance.

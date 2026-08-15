@@ -407,3 +407,23 @@ That distinction is the reason this project exists.
 
 ## Troubleshooting
 See [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md).
+
+
+## Test isolation
+
+The test suite intentionally forces `LLM_PROVIDER=mock` so tests remain
+deterministic even when your local `.env` is configured for Ollama or Azure OpenAI.
+
+Run tests from the repository root:
+
+```bash
+python -m pytest -q
+```
+
+The runtime application can still use:
+
+```env
+LLM_PROVIDER=ollama
+```
+
+without affecting the test suite.
