@@ -1,7 +1,61 @@
 import json
+import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 import httpx
+
+
+def _extract_json_object(text: str) -> dict:
+    """Parse a JSON object from an LLM response, tolerating fenced/extra text."""
+    text = (text or "").strip()
+    try:
+        obj = json.loads(text)
+        if isinstance(obj, dict):
+            return obj
+    except json.JSONDecodeError:
+        pass
+
+    # Strip markdown fences if the model returned them.
+    cleaned = re.sub(r"^```(?:json)?\s*|\s*```$", "", text, flags=re.IGNORECASE | re.DOTALL).strip()
+    try:
+        obj = json.loads(cleaned)
+        if isinstance(obj, dict):
+            return obj
+    except json.JSONDecodeError:
+        pass
+
+    # Recover the first balanced JSON object.
+    start = cleaned.find("{")
+    if start >= 0:
+        depth = 0
+        in_string = False
+        escaped = False
+        for i in range(start, len(cleaned)):
+            ch = cleaned[i]
+            if in_string:
+                if escaped:
+                    escaped = False
+                elif ch == "\\":
+                    escaped = True
+                elif ch == '"':
+                    in_string = False
+                continue
+            if ch == '"':
+                in_string = True
+            elif ch == "{":
+                depth += 1
+            elif ch == "}":
+                depth -= 1
+                if depth == 0:
+                    candidate = cleaned[start:i + 1]
+                    try:
+                        obj = json.loads(candidate)
+                        if isinstance(obj, dict):
+                            return obj
+                    except json.JSONDecodeError:
+                        break
+
+    raise ValueError(f"LLM did not return a valid JSON object: {text[:500]}")
 
 @dataclass
 class LLMResult:
@@ -28,6 +82,11 @@ class MockProvider(LLMProvider):
             sql = "SELECT region, AVG(promo_spend) AS avg_promo_spend FROM store_week GROUP BY region ORDER BY avg_promo_spend DESC"
         elif "highest orders" in q and "january" in q:
             sql = "SELECT store_id, SUM(orders) AS total_orders FROM store_week WHERE week_start >= '2026-01-01' AND week_start < '2026-02-01' GROUP BY store_id ORDER BY total_orders DESC LIMIT 1"
+        elif "total sales" in q and "last month" in q:
+            sql = """SELECT SUM(sales) AS total_sales
+FROM store_week
+WHERE week_start >= date((SELECT MAX(week_start) FROM store_week), 'start of month', '-1 month')
+  AND week_start < date((SELECT MAX(week_start) FROM store_week), 'start of month')"""
         elif "monthly sales" in q:
             sql = "SELECT substr(week_start, 1, 7) AS month, region, SUM(sales) AS total_sales FROM store_week GROUP BY month, region ORDER BY month, total_sales DESC"
         elif "ads spend" in q:
@@ -67,12 +126,26 @@ class OllamaProvider(LLMProvider):
 
     def generate_sql(self, question: str, schema: str, repair_reason: str | None = None) -> LLMResult:
         repair = f"Previous validation error: {repair_reason}\nFix it." if repair_reason else ""
-        prompt = f"""You are a senior analytics SQL engineer. Generate exactly one read-only SQLite SELECT statement.
-Rules: use only the supplied schema; never mutate data; no multiple statements; return JSON exactly {{\"sql\": \"SELECT ...\"}}; no markdown.
+        prompt = f"""You are a senior analytics SQL engineer generating SQLite SQL for a production analytics system.
+Generate exactly one read-only SELECT statement.
+
+Rules:
+1. Use only the supplied schema and its columns.
+2. Never mutate data; no INSERT, UPDATE, DELETE, DDL, PRAGMA, or multiple statements.
+3. Return ONLY a JSON object with exactly one key: sql.
+4. The sql value must be a valid SQLite SELECT statement.
+5. For relative dates such as last month, use the latest date available in the dataset as the reference point, not the current calendar date.
+6. week_start is stored as ISO text YYYY-MM-DD.
+7. For the previous complete month, use SQLite expressions such as date((SELECT MAX(week_start) FROM store_week), 'start of month', '-1 month').
+8. Do not put explanations or markdown in the response.
+
 {repair}
-Schema:\n{schema}\nQuestion:\n{question}"""
+Schema:
+{schema}
+Question:
+{question}"""
         result = self._chat(prompt)
-        obj = json.loads(result.text)
+        obj = _extract_json_object(result.text)
         result.text = obj["sql"]
         return result
 
@@ -80,7 +153,7 @@ Schema:\n{schema}\nQuestion:\n{question}"""
         prompt = f"""Answer using only the supplied SQL result. Do not invent facts. Return JSON {{\"answer\": \"...\"}}.
 Question: {question}\nColumns: {columns}\nRows: {rows}"""
         result = self._chat(prompt)
-        obj = json.loads(result.text)
+        obj = _extract_json_object(result.text)
         result.text = obj["answer"]
         return result
 

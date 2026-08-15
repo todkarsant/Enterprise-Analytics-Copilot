@@ -62,15 +62,40 @@ def execute_node(state: AgentState):
     except Exception as exc:
         trace(state,"sql_execution",t,error=str(exc)); return {"error":f"SQL execution failed: {exc}"}
 
+def _deterministic_answer(question: str, columns: list[str], rows: list[list]) -> str:
+    """Safe fallback when the summarizer fails or no rows are returned."""
+    if not rows:
+        return "No rows matched the generated query."
+    if "store_id" in columns and "total_sales" in columns:
+        i1, i2 = columns.index("store_id"), columns.index("total_sales")
+        return f"The top store by sales is {rows[0][i1]} with {rows[0][i2]:,.2f} in total sales."
+    if "month" in columns and "total_sales" in columns:
+        return f"The query returned {len(rows)} monthly sales result(s)."
+    if "region" in columns and "total_sales" in columns:
+        return f"The query returned {len(rows)} regional sales result(s)."
+    return f"The query returned {len(rows)} row(s)."
+
 def answer_node(state: AgentState):
-    t=perf_counter(); provider=get_provider()
-    if state.get("error"): return {"answer":state["error"],"latency_ms":round((perf_counter()-state["started_at"])*1000,2)}
+    t=perf_counter()
+    if state.get("error"):
+        return {"answer":state["error"],"latency_ms":round((perf_counter()-state["started_at"])*1000,2)}
+
+    # Do not spend an LLM call trying to explain an empty result.
+    if not state.get("rows"):
+        answer = "No rows matched the generated query."
+        trace(state,"answer_generation",t,model="deterministic_fallback",reason="empty_result")
+        return {"answer":answer,"latency_ms":round((perf_counter()-state["started_at"])*1000,2),"model":"deterministic_fallback"}
+
+    provider=get_provider()
     try:
         result=provider.summarize(state["question"],state["columns"],state["rows"])
         trace(state,"answer_generation",t,model=result.model,input_tokens=result.input_tokens,output_tokens=result.output_tokens)
         return {"answer":result.text,"latency_ms":round((perf_counter()-state["started_at"])*1000,2),"input_tokens":state.get("input_tokens",0)+result.input_tokens,"output_tokens":state.get("output_tokens",0)+result.output_tokens,"model":result.model}
     except Exception as exc:
-        trace(state,"answer_generation",t,error=str(exc)); return {"answer":f"Unable to summarize result: {exc}","latency_ms":round((perf_counter()-state["started_at"])*1000,2)}
+        # LLM summaries are an enhancement; the core analytics result remains usable.
+        fallback = _deterministic_answer(state["question"], state["columns"], state["rows"])
+        trace(state,"answer_generation",t,model="deterministic_fallback",error=str(exc))
+        return {"answer":fallback,"latency_ms":round((perf_counter()-state["started_at"])*1000,2),"model":"deterministic_fallback"}
 
 def build_graph():
     b=StateGraph(AgentState)

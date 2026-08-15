@@ -13,3 +13,11 @@
 - Added evaluation benchmark and engineering tests.
 - Added Docker Compose local deployment.
 - Added HLD, LLD, evaluation and interview documentation.
+
+## V0.2.1 — Runtime hardening
+
+- Fixed Ollama JSON parsing for fenced/extra-text responses.
+- Added deterministic answer fallback so an LLM summarization failure does not break a valid SQL result.
+- Avoided unnecessary summarization calls when SQL returns no rows.
+- Added dataset-relative handling for "last month" in the deterministic provider.
+- Strengthened the Ollama prompt around SQLite date semantics and dataset-relative time.

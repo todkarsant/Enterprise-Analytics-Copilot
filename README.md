@@ -1,4 +1,5 @@
-# Enterprise Analytics Copilot — V0.2
+# Enterprise Analytics Copilot — V0.2.1
+
 
 Production-oriented local reference implementation for **NL2SQL + analytics reasoning**.
 
@@ -402,3 +403,7 @@ It is:
 > "I designed a guarded analytics execution system where the LLM is one component inside a controlled pipeline. Schema context is retrieved, SQL is structurally validated, invalid queries can be repaired within a bounded budget, only validated read-only queries execute, results are cached, and latency/token/cost metrics are captured for evaluation."
 
 That distinction is the reason this project exists.
+
+
+## Troubleshooting
+See [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md).
