@@ -38,3 +38,21 @@ def test_reject_multiple_statements():
         "SELECT sales FROM store_week; DROP TABLE store_week"
     )
     assert valid is False
+
+
+def test_valid_physical_table_alias():
+    valid, reason, normalized = validate_sql(
+        "SELECT sw.store_id, SUM(sw.sales) AS total_sales "
+        "FROM store_week AS sw GROUP BY sw.store_id ORDER BY total_sales DESC"
+    )
+    assert valid is True
+
+
+def test_reject_unnecessary_self_join():
+    valid, reason, normalized = validate_sql(
+        "SELECT t1.store_id, SUM(t2.sales) AS total_sales "
+        "FROM store_week AS t1 JOIN store_week AS t2 ON t1.store_id = t2.store_id "
+        "GROUP BY t1.store_id"
+    )
+    assert valid is False
+    assert "self-join" in reason.lower()

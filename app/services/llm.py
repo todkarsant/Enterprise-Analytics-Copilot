@@ -137,7 +137,11 @@ Rules:
 5. For relative dates such as last month, use the latest date available in the dataset as the reference point, not the current calendar date.
 6. week_start is stored as ISO text YYYY-MM-DD.
 7. For the previous complete month, use SQLite expressions such as date((SELECT MAX(week_start) FROM store_week), 'start of month', '-1 month').
-8. Do not put explanations or markdown in the response.
+8. The current dataset has one analytical table: store_week. Prefer a direct aggregation over this table.
+9. Do NOT self-join store_week. Do NOT create derived-table aliases such as T1/T2 unless the supplied schema explicitly requires a multi-table join.
+10. For "highest sales", "top stores by sales", or equivalent, use SUM(sales), GROUP BY store_id, ORDER BY the aggregate alias DESC, and LIMIT 10.
+11. Do not reference a table alias that is not defined in the same SELECT.
+12. Do not put explanations or markdown in the response.
 
 {repair}
 Schema:

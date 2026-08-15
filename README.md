@@ -447,3 +447,14 @@ rejected this valid query as an unknown column, which caused the API to return
 HTTP 422 for the deterministic mock test.
 
 The test suite now explicitly covers this case.
+
+
+## V0.2.4 — SQL generation/validation hardening
+
+The SQL guard now understands physical table aliases and explicitly rejects
+unnecessary self-joins for the current single-table demo schema. This prevents
+small local models from turning a simple aggregation such as "highest sales by
+store" into an invalid `T1`/`T2` self-join.
+
+The Ollama SQL prompt also contains explicit patterns for top-store aggregation
+and forbids unnecessary joins for the current schema.
