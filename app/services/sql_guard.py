@@ -1,11 +1,13 @@
 import re
+
 import sqlglot
 from sqlglot import exp
-from app.services.schema_catalog import ALLOWED_TABLES, ALLOWED_COLUMNS
+
+from app.services.schema_catalog import ALLOWED_COLUMNS, ALLOWED_TABLES
 
 FORBIDDEN = {
     "insert", "update", "delete", "drop", "alter", "create", "attach", "detach",
-    "pragma", "replace", "vacuum", "reindex", "truncate", "grant", "revoke"
+    "pragma", "replace", "vacuum", "reindex", "truncate", "grant", "revoke",
 }
 
 
@@ -39,11 +41,29 @@ def validate_sql(sql: str, max_length: int = 4000) -> tuple[bool, str, str | Non
     if unknown_tables:
         return False, f"Unknown table(s): {', '.join(sorted(unknown_tables))}.", None
 
+    # SQL aliases are valid identifiers produced by the SELECT list and may be
+    # referenced later in ORDER BY / GROUP BY / HAVING. They are not physical
+    # database columns and therefore must not be rejected by the allow-list.
+    select_aliases = {
+        alias.alias
+        for alias in tree.find_all(exp.Alias)
+        if alias.alias
+    }
+
     for column in tree.find_all(exp.Column):
-        table = column.table or "store_week"
-        if table not in ALLOWED_COLUMNS:
-            return False, f"Unknown table reference: {table}.", None
-        if column.name != "*" and column.name not in ALLOWED_COLUMNS[table]:
+        # A qualified column must reference an allowed table.
+        if column.table:
+            if column.table not in ALLOWED_COLUMNS:
+                return False, f"Unknown table reference: {column.table}.", None
+            if column.name != "*" and column.name not in ALLOWED_COLUMNS[column.table]:
+                return False, f"Unknown column: {column.name}.", None
+            continue
+
+        # Unqualified SELECT aliases (e.g. ORDER BY total_sales) are allowed.
+        if column.name in select_aliases:
+            continue
+
+        if column.name != "*" and column.name not in ALLOWED_COLUMNS["store_week"]:
             return False, f"Unknown column: {column.name}.", None
 
     normalized = tree.sql(dialect="sqlite")

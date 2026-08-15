@@ -427,3 +427,23 @@ LLM_PROVIDER=ollama
 ```
 
 without affecting the test suite.
+
+## V0.2.3
+
+### SQL validation hardening
+
+The SQL guard now distinguishes **SELECT-list aliases** from physical database
+columns. For example:
+
+```sql
+SELECT store_id, SUM(sales) AS total_sales
+FROM store_week
+GROUP BY store_id
+ORDER BY total_sales DESC
+```
+
+`total_sales` is an output alias, not a physical column. V0.2.2 incorrectly
+rejected this valid query as an unknown column, which caused the API to return
+HTTP 422 for the deterministic mock test.
+
+The test suite now explicitly covers this case.

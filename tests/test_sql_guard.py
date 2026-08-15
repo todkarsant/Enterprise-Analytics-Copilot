@@ -1,18 +1,40 @@
 from app.services.sql_guard import validate_sql
 
-def test_accepts_select():
-    ok, reason, sql = validate_sql("SELECT store_id, SUM(sales) AS total_sales FROM store_week GROUP BY store_id")
-    assert ok and sql
 
-def test_rejects_mutation():
-    ok, _, _ = validate_sql("DELETE FROM store_week")
-    assert not ok
+def test_valid_select():
+    valid, reason, normalized = validate_sql(
+        "SELECT store_id, SUM(sales) AS total_sales "
+        "FROM store_week GROUP BY store_id ORDER BY total_sales DESC LIMIT 10"
+    )
+    assert valid is True
+    assert "total_sales" in normalized
 
-def test_rejects_unknown_column():
-    ok, reason, _ = validate_sql("SELECT secret_column FROM store_week")
-    assert not ok
+
+def test_select_alias_is_not_treated_as_physical_column():
+    valid, reason, normalized = validate_sql(
+        "SELECT region, SUM(sales) AS total_sales "
+        "FROM store_week GROUP BY region ORDER BY total_sales DESC"
+    )
+    assert valid is True
+
+
+def test_reject_unknown_column():
+    valid, reason, normalized = validate_sql(
+        "SELECT store_id, customer_lifetime_value FROM store_week"
+    )
+    assert valid is False
     assert "Unknown column" in reason
 
-def test_rejects_multiple_statements():
-    ok, _, _ = validate_sql("SELECT * FROM store_week; DROP TABLE store_week")
-    assert not ok
+
+def test_reject_mutation():
+    valid, reason, normalized = validate_sql(
+        "DELETE FROM store_week"
+    )
+    assert valid is False
+
+
+def test_reject_multiple_statements():
+    valid, reason, normalized = validate_sql(
+        "SELECT sales FROM store_week; DROP TABLE store_week"
+    )
+    assert valid is False
