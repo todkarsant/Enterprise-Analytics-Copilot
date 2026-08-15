@@ -67,17 +67,30 @@ def validate_sql(sql: str, max_length: int = 4000) -> tuple[bool, str, str | Non
         for table in tree.find_all(exp.Table)
         if table.name in ALLOWED_TABLES
     }
-    unknown_physical_tables = physical_tables - ALLOWED_TABLES
+    unknown_physical_tables = {
+        table.name
+        for table in tree.find_all(exp.Table)
+        if table.name not in ALLOWED_TABLES
+    }
     if unknown_physical_tables:
         return False, f"Unknown table(s): {', '.join(sorted(unknown_physical_tables))}.", None
+
+    # An alias such as `store_week AS sw` creates two names for one physical
+    # table, so alias count must NOT be used to detect a self-join. Count the
+    # actual physical-table occurrences instead.
+    physical_table_occurrences = [
+        table.name
+        for table in tree.find_all(exp.Table)
+        if table.name in ALLOWED_TABLES
+    ]
 
     # The current demo schema has one physical table. A self-join / derived
     # self-join adds complexity without adding information and is a common
     # failure mode for small local models. Ask the repair loop to simplify it.
-    if len(physical_tables) == 1 and len(physical_aliases) > 1:
+    if len(physical_table_occurrences) > 1 and len(physical_tables) == 1:
         return (
             False,
-            "Unnecessary self-join or table aliasing detected. "
+            "Unnecessary self-join or repeated store_week reference detected. "
             "Use a direct aggregation over store_week without joining store_week to itself.",
             None,
         )

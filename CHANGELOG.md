@@ -1,11 +1,15 @@
 # Changelog
 
+## 0.2.5
+
+- Fixed false-positive self-join detection for valid physical table aliases.
+- Added regression coverage for `store_week AS sw`.
+
 ## 0.2.4
 
-- Added physical table alias resolution in the SQL guard.
-- Added detection/rejection of unnecessary self-joins for the current one-table schema.
-- Strengthened Ollama SQL-generation instructions for top-store aggregations.
-- Added regression tests for valid aliases and self-join rejection.
+- Added physical table alias resolution.
+- Added unnecessary self-join detection for the single-table demo schema.
+- Strengthened Ollama SQL-generation instructions for top-store aggregation.
 
 ## 0.2.3
 

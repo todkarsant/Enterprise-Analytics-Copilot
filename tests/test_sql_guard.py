@@ -56,3 +56,14 @@ def test_reject_unnecessary_self_join():
     )
     assert valid is False
     assert "self-join" in reason.lower()
+
+
+def test_alias_does_not_trigger_self_join_guard():
+    valid, reason, normalized = validate_sql(
+        "SELECT sw.store_id, SUM(sw.sales) AS total_sales "
+        "FROM store_week AS sw "
+        "GROUP BY sw.store_id "
+        "ORDER BY total_sales DESC"
+    )
+    assert valid is True
+    assert normalized

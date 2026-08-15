@@ -458,3 +458,12 @@ store" into an invalid `T1`/`T2` self-join.
 
 The Ollama SQL prompt also contains explicit patterns for top-store aggregation
 and forbids unnecessary joins for the current schema.
+
+
+## V0.2.5 — Alias vs self-join validation fix
+
+A table alias such as `store_week AS sw` is valid and must not be classified as
+a self-join. The SQL guard now counts actual physical table occurrences rather
+than the number of alias names.
+
+This regression is covered by the SQL guard test suite.
