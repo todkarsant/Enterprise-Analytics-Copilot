@@ -7,6 +7,7 @@ from app.db import execute_readonly
 from app.services.schema_catalog import retrieve_schema
 from app.services.providers import get_provider
 from app.services.sql_guard import validate_sql
+from app.services.intent_planner import plan_question
 from app.services.cache import TTLCache
 
 class AgentState(TypedDict, total=False):
@@ -15,7 +16,7 @@ class AgentState(TypedDict, total=False):
     columns: list[str]; rows: list[list]; answer: str; error: str
     repair_attempts: int; started_at: float; latency_ms: float
     trace: list[dict]; input_tokens: int; output_tokens: int; model: str
-    schema_items: list[dict]; cache_hit: bool
+    schema_items: list[dict]; cache_hit: bool; intent: str; planner_used: bool
 
 settings = get_settings()
 QUERY_CACHE = TTLCache(settings.cache_ttl_seconds)
@@ -30,13 +31,58 @@ def schema_context(state: AgentState):
     return {"schema": retrieved["context"], "schema_items": retrieved["items"]}
 
 def generate_sql(state: AgentState):
-    t=perf_counter(); provider=get_provider()
+    t = perf_counter()
+
+    # High-confidence analytical intents bypass unconstrained LLM SQL generation.
+    # This improves reliability and latency while preserving the LLM path for
+    # questions the planner cannot classify confidently.
+    if not state.get("validation_reason"):
+        plan = plan_question(state["question"])
+        if plan is not None:
+            trace(
+                state,
+                "intent_planner",
+                t,
+                intent=plan.intent,
+                deterministic=True,
+                reason=plan.reason,
+            )
+            return {
+                "sql": plan.sql,
+                "error": "",
+                "input_tokens": state.get("input_tokens", 0),
+                "output_tokens": state.get("output_tokens", 0),
+                "model": "deterministic_sql_planner",
+                "intent": plan.intent,
+                "planner_used": True,
+            }
+
+    provider = get_provider()
     try:
-        result=provider.generate_sql(state["question"], state["schema"], state.get("validation_reason"))
-        trace(state,"sql_generation",t,model=result.model,input_tokens=result.input_tokens,output_tokens=result.output_tokens)
-        return {"sql":result.text,"error":"","input_tokens":state.get("input_tokens",0)+result.input_tokens,"output_tokens":state.get("output_tokens",0)+result.output_tokens,"model":result.model}
+        result = provider.generate_sql(
+            state["question"],
+            state["schema"],
+            state.get("validation_reason"),
+        )
+        trace(
+            state,
+            "sql_generation",
+            t,
+            model=result.model,
+            input_tokens=result.input_tokens,
+            output_tokens=result.output_tokens,
+        )
+        return {
+            "sql": result.text,
+            "error": "",
+            "input_tokens": state.get("input_tokens", 0) + result.input_tokens,
+            "output_tokens": state.get("output_tokens", 0) + result.output_tokens,
+            "model": result.model,
+            "planner_used": False,
+        }
     except Exception as exc:
-        trace(state,"sql_generation",t,error=str(exc)); return {"sql":"","error":str(exc)}
+        trace(state, "sql_generation", t, error=str(exc))
+        return {"sql": "", "error": str(exc), "planner_used": False}
 
 def validate_node(state: AgentState):
     t=perf_counter(); valid,reason,normalized=validate_sql(state.get("sql",""),get_settings().max_sql_length)
@@ -110,4 +156,4 @@ def run_agent(question:str)->dict:
     started=perf_counter(); result=GRAPH.invoke({"question":question,"repair_attempts":0,"started_at":started,"trace":[]})
     input_tokens=result.get("input_tokens",0); output_tokens=result.get("output_tokens",0)
     cost=(input_tokens/1000)*get_settings().cost_per_1k_input_tokens_usd+(output_tokens/1000)*get_settings().cost_per_1k_output_tokens_usd
-    return {"question":question,"sql":result.get("normalized_sql") or result.get("sql", ""),"columns":result.get("columns",[]),"rows":result.get("rows",[]),"answer":result.get("answer",result.get("error","No answer generated.")),"validation":{"valid":result.get("validation_valid",False),"reason":result.get("validation_reason",result.get("error","Unknown error")),"normalized_sql":result.get("normalized_sql")},"metrics":{"latency_ms":result.get("latency_ms",round((perf_counter()-started)*1000,2)),"rows_returned":len(result.get("rows",[])),"llm_provider":get_settings().llm_provider,"model":result.get("model","unknown"),"input_tokens":input_tokens,"output_tokens":output_tokens,"estimated_cost_usd":round(cost,8),"cache_hit":result.get("cache_hit",False),"repair_attempts":result.get("repair_attempts",0)},"trace":result.get("trace",[]),"schema_items":result.get("schema_items",[])}
+    return {"question":question,"sql":result.get("normalized_sql") or result.get("sql", ""),"columns":result.get("columns",[]),"rows":result.get("rows",[]),"answer":result.get("answer",result.get("error","No answer generated.")),"validation":{"valid":result.get("validation_valid",False),"reason":result.get("validation_reason",result.get("error","Unknown error")),"normalized_sql":result.get("normalized_sql")},"metrics":{"latency_ms":result.get("latency_ms",round((perf_counter()-started)*1000,2)),"rows_returned":len(result.get("rows",[])),"llm_provider":get_settings().llm_provider,"model":result.get("model","unknown"),"input_tokens":input_tokens,"output_tokens":output_tokens,"estimated_cost_usd":round(cost,8),"cache_hit":result.get("cache_hit",False),"repair_attempts":result.get("repair_attempts",0),"planner_used":result.get("planner_used",False),"intent":result.get("intent","unknown")},"trace":result.get("trace",[]),"schema_items":result.get("schema_items",[])}

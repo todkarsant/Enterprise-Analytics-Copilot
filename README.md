@@ -467,3 +467,26 @@ a self-join. The SQL guard now counts actual physical table occurrences rather
 than the number of alias names.
 
 This regression is covered by the SQL guard test suite.
+
+## V0.2.6 — Intent planning before NL2SQL
+
+V0.2.6 introduces a conservative **Intent Planner** before unconstrained LLM
+SQL generation.
+
+For high-confidence analytical intents such as:
+
+- highest/top stores by sales
+- highest/top stores by orders
+- sales by region
+- total sales last month
+- average promotion spend
+- advertising spend
+
+the system builds a validated SQL plan deterministically.
+
+Questions outside those patterns continue through the Ollama/Azure LLM path.
+
+This hybrid approach is intentional: the LLM is used where language ambiguity
+requires it, while deterministic logic handles high-confidence business
+queries. The goal is to improve correctness, latency, and reproducibility
+without pretending that a 1B local model is a production-grade SQL planner.

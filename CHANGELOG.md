@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.6
+
+- Added a conservative deterministic Intent Planner before LLM SQL generation.
+- Added high-confidence templates for top stores by sales/orders, regional sales,
+  last-month total sales, promotion spend, and advertising spend.
+- Added planner observability fields: `planner_used` and `intent`.
+- Added planner regression tests.
+- Unknown/ambiguous questions continue to the LLM path.
+
 ## 0.2.5
 
 - Fixed false-positive self-join detection for valid physical table aliases.

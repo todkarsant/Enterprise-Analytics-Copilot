@@ -130,3 +130,35 @@ flowchart LR
     DB --> A
     A --> O[Trace + Metrics]
 ```
+
+
+## V0.2.6 Intent Planning Layer
+
+The SQL generation path now uses a hybrid strategy:
+
+```text
+User Question
+      |
+      v
+Schema Retrieval
+      |
+      v
+Intent Planner
+   /       \
+Known       Unknown
+ |             |
+ v             v
+Deterministic  LLM SQL
+SQL Plan       Generation
+ \             /
+  \           /
+    v       v
+      SQL Guard
+          |
+          v
+       Execute
+```
+
+The planner is deliberately conservative. It only takes ownership of
+high-confidence analytical intents. Unknown/ambiguous questions remain on the
+LLM path.

@@ -154,3 +154,24 @@ flowchart TD
     EXEC --> ANSWER[Generate Answer]
     ANSWER --> END
 ```
+
+
+## Intent Planner Contract
+
+`app/services/intent_planner.py` exposes:
+
+```python
+plan_question(question: str) -> SQLPlan | None
+```
+
+`SQLPlan` contains:
+
+- `sql`
+- `intent`
+- `deterministic`
+- `reason`
+
+Returning `None` is an intentional signal to use the LLM path.
+
+The planner must remain conservative; it must not guess a business metric when
+the user question is ambiguous.
