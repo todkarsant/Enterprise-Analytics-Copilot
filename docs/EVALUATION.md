@@ -1,72 +1,90 @@
-# Evaluation Plan — V0.2
+# Evaluation Plan — V0.2.7
 
 The objective is to evaluate the system as an analytics product, not just whether an LLM can generate SQL.
 
-## A. SQL Validity
+## A. Intent Routing Accuracy
 
-**Metric:** validation pass rate
+For benchmark questions with known intents:
 
-`valid generated SQL / total generated SQL`
+`correctly routed intent / benchmark questions`
 
-This measures whether the guardrail accepts the generated query.
+This is especially important after introducing deterministic planners.
 
-## B. Schema Contract Accuracy
+## B. SQL Validity
 
-For each benchmark case, define expected result columns. A case passes when all required columns are present.
+`valid SQL / generated SQL`
 
-This is a lightweight local proxy for SQL correctness and should not be confused with full semantic accuracy.
+For deterministic paths, the generated SQL should be stable and repeatable.
 
-## C. Execution Success Rate
+## C. Schema Contract Accuracy
 
-`successful DB executions / generated SQL attempts`
+A case passes when all expected result columns are present.
 
-Track parser failures and database failures separately.
+This is a lightweight contract test, not a full semantic correctness metric.
 
-## D. Semantic Correctness — V0.3 target
+## D. Analytical Result Correctness
 
-For a mature benchmark, compare the generated query result against a trusted reference query/result. Prefer result equivalence over string equality because multiple SQL statements can be semantically identical.
+For analytical plans, compare calculated values against trusted reference calculations.
 
-## E. Hallucinated Schema Rate
+V0.2.7's `Why did sales decline?` benchmark checks:
+
+- an analytical plan was selected
+- no repair was required
+- the comparison result is internally consistent
+- the answer does not claim a decline when the measured change is positive
+
+## E. Execution Success
+
+`successful DB executions / attempted executions`
+
+Track parser, policy and database failures separately.
+
+## F. Hallucinated Schema Rate
 
 `queries referencing unknown tables/columns / total generated queries`
 
 Target should trend toward zero.
 
-## F. Latency
+## G. Latency
 
 Track:
+
 - total latency
-- schema retrieval latency
+- schema retrieval
+- planner latency
 - SQL generation latency
 - validation latency
 - DB execution latency
-- answer generation latency
+- answer latency
 
-Use P50/P95 once the benchmark contains enough repeated runs.
+Use P50/P95 once repeated benchmark runs are available.
 
-## G. Cost
+## H. LLM Cost
 
-When provider token usage is available:
+When usage metadata is available:
 
-`estimated_cost = input_tokens / 1000 * input_price + output_tokens / 1000 * output_price`
+`input_tokens / 1000 * input_price + output_tokens / 1000 * output_price`
 
-Prices are intentionally configuration-driven; no model price is hard-coded because pricing changes.
+No model price is hard-coded.
 
-## H. Cache Effectiveness
+## I. Planner Value
 
-Track:
+Compare:
 
-`cache_hit_rate = cache_hits / eligible_queries`
+```text
+V0.2.5/LLM-first
+vs
+V0.2.6/V0.2.7 hybrid routing
+```
 
-Compare latency for cache hits vs misses.
+Metrics:
 
-## I. Regression Suite
+- LLM SQL calls avoided
+- repair attempts avoided
+- latency reduction
+- token reduction
+- correctness/regression rate
 
-Every change to prompts, provider configuration or validation rules should run the benchmark suite. The goal is to detect regressions in:
+## J. Model Benchmark — next release
 
-- SQL validity
-- schema correctness
-- execution success
-- latency
-- cost
-- safety rejection
+Keep `llama3.2:1b` as the baseline. Compare stronger models on the same benchmark before changing the default model.

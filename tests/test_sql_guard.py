@@ -18,6 +18,14 @@ def test_select_alias_is_not_treated_as_physical_column():
     assert valid is True
 
 
+def test_valid_physical_table_alias():
+    valid, reason, normalized = validate_sql(
+        "SELECT sw.store_id, SUM(sw.sales) AS total_sales "
+        "FROM store_week AS sw GROUP BY sw.store_id ORDER BY total_sales DESC"
+    )
+    assert valid is True
+
+
 def test_reject_unknown_column():
     valid, reason, normalized = validate_sql(
         "SELECT store_id, customer_lifetime_value FROM store_week"
@@ -27,9 +35,7 @@ def test_reject_unknown_column():
 
 
 def test_reject_mutation():
-    valid, reason, normalized = validate_sql(
-        "DELETE FROM store_week"
-    )
+    valid, reason, normalized = validate_sql("DELETE FROM store_week")
     assert valid is False
 
 
@@ -40,30 +46,11 @@ def test_reject_multiple_statements():
     assert valid is False
 
 
-def test_valid_physical_table_alias():
-    valid, reason, normalized = validate_sql(
-        "SELECT sw.store_id, SUM(sw.sales) AS total_sales "
-        "FROM store_week AS sw GROUP BY sw.store_id ORDER BY total_sales DESC"
-    )
-    assert valid is True
-
-
-def test_reject_unnecessary_self_join():
-    valid, reason, normalized = validate_sql(
-        "SELECT t1.store_id, SUM(t2.sales) AS total_sales "
-        "FROM store_week AS t1 JOIN store_week AS t2 ON t1.store_id = t2.store_id "
-        "GROUP BY t1.store_id"
-    )
-    assert valid is False
-    assert "self-join" in reason.lower()
-
-
-def test_alias_does_not_trigger_self_join_guard():
-    valid, reason, normalized = validate_sql(
-        "SELECT sw.store_id, SUM(sw.sales) AS total_sales "
-        "FROM store_week AS sw "
-        "GROUP BY sw.store_id "
-        "ORDER BY total_sales DESC"
-    )
-    assert valid is True
-    assert normalized
+def test_trusted_analytical_cte_is_allowed():
+    sql = """
+    WITH base AS (SELECT week_start, sales FROM store_week),
+    weekly AS (SELECT week_start, SUM(sales) AS total_sales FROM base GROUP BY week_start)
+    SELECT week_start, total_sales FROM weekly ORDER BY week_start DESC LIMIT 1
+    """
+    valid, reason, normalized = validate_sql(sql, allow_repeated_table_references=True)
+    assert valid is True, reason

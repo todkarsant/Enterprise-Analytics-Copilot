@@ -1,14 +1,30 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
+
 from app.api import router
 from app.db import init_database
 
-app=FastAPI(title="Enterprise Analytics Copilot",version="0.2.2",description="Production-oriented NL2SQL and analytics assistant.")
-app.include_router(router,prefix="/api")
 
-@app.on_event("startup")
-def startup():
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
     init_database()
+    yield
+
+
+app = FastAPI(
+    title="Enterprise Analytics Copilot",
+    version="0.2.7",
+    description="Production-oriented NL2SQL and analytical reasoning assistant.",
+    lifespan=lifespan,
+)
+app.include_router(router, prefix="/api")
+
 
 @app.get("/")
 def root():
-    return {"service":"enterprise-analytics-copilot","version":"0.2.0","docs":"/docs"}
+    return {
+        "service": "enterprise-analytics-copilot",
+        "version": "0.2.7",
+        "docs": "/docs",
+    }

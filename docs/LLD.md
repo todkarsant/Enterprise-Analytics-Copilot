@@ -1,20 +1,22 @@
-# LLD — Enterprise Analytics Copilot V0.2
+# LLD — Enterprise Analytics Copilot V0.2.7
 
 ## 1. Module Design
 
 ```text
 app/
-├── api.py                 # HTTP contract
-├── agent.py               # LangGraph state machine
-├── config.py              # environment configuration
-├── db.py                  # DB connection/execution
-├── schema.py              # API models
+├── api.py
+├── agent.py
+├── config.py
+├── db.py
+├── schema.py
 └── services/
-    ├── cache.py           # TTL query result cache
-    ├── llm.py             # provider interface + implementations
-    ├── providers.py       # provider factory
-    ├── schema_catalog.py  # business-aware schema retrieval
-    └── sql_guard.py       # SQL parsing and policy enforcement
+    ├── analytical_planner.py
+    ├── cache.py
+    ├── intent_planner.py
+    ├── llm.py
+    ├── providers.py
+    ├── schema_catalog.py
+    └── sql_guard.py
 ```
 
 ## 2. Agent State
@@ -23,6 +25,12 @@ app/
 question
 schema
 schema_items
+analysis_plan
+analysis_results
+analysis_used
+analysis_assumption
+intent
+planner_used
 sql
 normalized_sql
 validation_valid
@@ -39,139 +47,96 @@ trace
 error
 ```
 
-## 3. Sequence
+## 3. State Machine
 
 ```text
-Client
-  |
-  | POST /api/query
-  v
-FastAPI
-  |
-  v
-LangGraph
-  |
-  +--> Schema Retrieval
-  |
-  +--> SQL Generation
-  |
-  +--> SQL Validation ---- invalid ----> Repair ----+
-  |                                                  |
-  |<---------------- bounded retries ----------------+
-  |
-  +--> Query Cache
-  |       |
-  |       +--> hit ------------------+
-  |       |                           |
-  |       +--> miss --> DB ----------+
-  |
-  +--> Answer Generation
-  |
-  v
-Response + metrics + trace
+START
+  ↓
+Schema Context
+  ↓
+Analytical Planner
+  ├───────────────┐
+  │ matched       │ no match
+  ↓               ↓
+Analytical     Intent Planner
+Execution         ├───────────────┐
+  ↓               │ known         │ unknown
+Answer            ↓               ↓
+              Deterministic     LLM SQL
+              SQL               Generation
+                  \               /
+                   ↓             ↓
+                    SQL Guard
+                       ↓
+                    Execute
+                       ↓
+                     Answer
 ```
 
-## 4. SQL Guard Contract
-
-Input: arbitrary generated SQL string.
-
-Output:
+## 4. Analytical Plan Contract
 
 ```python
-(valid: bool, reason: str, normalized_sql: str | None)
+@dataclass(frozen=True)
+class AnalysisStep:
+    name: str
+    sql: str
+    purpose: str
+
+@dataclass(frozen=True)
+class AnalysisPlan:
+    intent: str
+    assumption: str
+    steps: tuple[AnalysisStep, ...]
 ```
 
-Rules:
-- non-empty
-- max length
-- one statement
-- `SELECT` only
-- no mutating/administrative keywords
-- valid SQLite parse tree
-- known table names
-- known column names
+`plan_analytical_question(question)` returns `None` when it cannot classify a supported analytical intent.
 
-## 5. Provider Contract
+## 5. Sales Decline Analysis
+
+The current supported workflow has two steps:
+
+1. `period_comparison`
+   - identifies latest and previous available weeks
+   - calculates total sales change and percentage change
+2. `store_contributors`
+   - calculates store-level changes
+   - ranks the most negative contributors
+
+The SQL is deterministic and passes through the SQL guard before execution.
+
+## 6. Answer Strategy
+
+### Deterministic intent
+
+Use a deterministic table-oriented answer template. No summarization LLM call is required.
+
+### Analytical intent
+
+Use deterministic evidence formatting. The answer explicitly states the comparison assumption and reports whether the data supports the user's premise.
+
+### Unknown intent
+
+Use the configured LLM summarizer, with deterministic fallback if summarization fails.
+
+## 7. SQL Guard Contract
 
 ```python
-class LLMProvider:
-    generate_sql(question, schema, repair_reason=None) -> LLMResult
-    summarize(question, columns, rows) -> LLMResult
+validate_sql(
+    sql: str,
+    max_length: int = 4000,
+    *,
+    allow_repeated_table_references: bool = False,
+) -> tuple[bool, str, str | None]
 ```
 
-This allows the orchestrator to remain independent of the model vendor.
+The default is strict for LLM-generated SQL. Trusted analytical plans can opt into repeated table references while retaining parser and schema validation.
 
-## 6. Metrics Contract
+## 8. Testing Strategy
 
-Each query reports:
-
-- end-to-end latency
-- result row count
-- provider/model
-- input tokens
-- output tokens
-- estimated cost
-- cache hit
-- repair attempts
-- per-node trace latency
-
-Token counts are populated when the provider returns usage metadata. Mock mode intentionally reports zero tokens.
-
-## 7. Testing Strategy
-
-### Unit tests
-- SQL mutation rejection
-- unknown column rejection
-- multiple statement rejection
-- schema retrieval
-
-### API tests
-- health check
-- deterministic mock query
-
-### Evaluation tests
-The evaluation script checks whether expected result columns are returned for representative questions and records latency/cache metrics.
-
-## 8. Extension Points
-
-- `SchemaRetriever` interface for vector/hybrid retrieval
-- `DatabaseAdapter` interface for warehouse-specific execution
-- Redis cache implementation
-- structured query plan representation
-- semantic result evaluator
-
-## 9. LangGraph State Machine
-
-```mermaid
-flowchart TD
-    START --> SCHEMA[Schema Context]
-    SCHEMA --> GEN[Generate SQL]
-    GEN --> VAL[Validate SQL]
-    VAL -->|valid| EXEC[Execute]
-    VAL -->|invalid + budget| REPAIR[Repair]
-    REPAIR --> GEN
-    VAL -->|invalid + no budget| END[End]
-    EXEC --> ANSWER[Generate Answer]
-    ANSWER --> END
-```
-
-
-## Intent Planner Contract
-
-`app/services/intent_planner.py` exposes:
-
-```python
-plan_question(question: str) -> SQLPlan | None
-```
-
-`SQLPlan` contains:
-
-- `sql`
-- `intent`
-- `deterministic`
-- `reason`
-
-Returning `None` is an intentional signal to use the LLM path.
-
-The planner must remain conservative; it must not guess a business metric when
-the user question is ambiguous.
+- schema retrieval unit tests
+- SQL mutation/allow-list tests
+- alias/CTE tests
+- deterministic intent tests
+- analytical planner tests
+- end-to-end API test for sales decline analysis
+- evaluation script covering deterministic and analytical paths

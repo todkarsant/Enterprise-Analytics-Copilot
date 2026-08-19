@@ -1,8 +1,14 @@
-# HLD — Enterprise Analytics Copilot V0.2
+# HLD — Enterprise Analytics Copilot V0.2.7
 
 ## 1. Objective
 
-Provide a production-oriented natural-language analytics workflow that converts a business question into a safe SQL query, validates it, executes it against an analytics database, and returns a concise business answer with traceable engineering metrics.
+Provide a production-oriented natural-language analytics workflow that converts business questions into safe, executable analytics operations and returns evidence-grounded business answers with traceable engineering metrics.
+
+V0.2.7 explicitly separates:
+
+- high-confidence deterministic analytics
+- multi-step analytical reasoning
+- unconstrained LLM fallback
 
 ## 2. System Context
 
@@ -19,146 +25,129 @@ Provide a production-oriented natural-language analytics workflow that converts 
                     +------------------------+------------------------+
                     |                        |                        |
                     v                        v                        v
-             Schema Retrieval          LLM Provider              Query Cache
-             + Business Context       Mock/Ollama/Azure         TTL cache
+             Schema Retrieval       Intent / Analytical Planner    Query Cache
                     |                        |                        |
-                    +------------+-----------+                        |
-                                 v                                    |
-                           SQL Validator ------------------------------+
-                                 |
-                                 v
-                           Read-only DB
-                                 |
-                                 v
-                         Result / Answer
-                                 |
-                                 v
-                         Trace + Metrics
+                    |              +---------+---------+              |
+                    |              |                   |              |
+                    |              v                   v              |
+                    |       Deterministic SQL      LLM SQL fallback   |
+                    |              |                   |              |
+                    +--------------+---------+---------+--------------+
+                                             |
+                                             v
+                                      SQL AST Guard
+                                             |
+                                             v
+                                       Read-only DB
+                                             |
+                                             v
+                                    Result / Evidence
+                                             |
+                                             v
+                                  Deterministic or LLM
+                                      Answer Layer
+                                             |
+                                             v
+                                      Trace + Metrics
 ```
 
-## 3. Main Components
+## 3. Routing Strategy
 
-### API layer
-- FastAPI endpoint `/api/query`
-- Health endpoint `/api/health`
-- Request validation and error mapping
+### Path A — high-confidence business intent
 
-### Orchestration layer
-LangGraph coordinates:
-1. schema retrieval
-2. SQL generation
-3. SQL validation
-4. bounded repair
-5. execution
-6. answer generation
+```text
+Question → Intent Planner → deterministic SQL → Guard → DB → deterministic answer
+```
 
-### Schema retrieval
-V0.2 uses deterministic lexical retrieval over a business-aware schema catalog. This is intentionally model-free so retrieval behaviour is reproducible locally. A vector/hybrid catalog can be added later without changing the orchestration contract.
+Examples:
 
-### LLM provider abstraction
-- `mock`: deterministic local tests/demo
-- `ollama`: local model execution
-- `azure_openai`: optional enterprise provider
+- highest sales by store
+- sales by region
+- highest orders by store
+- average promotion spend by region
 
-### SQL guardrail
-SQLGlot parses generated SQL. Only one `SELECT` statement is accepted. Table and column names are checked against an allow-list.
+### Path B — supported analytical reasoning
 
-### Execution layer
-SQLite is the default local database. A PostgreSQL connection path is included for deployment evolution, while the sample bootstrap remains SQLite-first for reproducibility.
+```text
+Question → Analytical Planner
+         → comparison SQL
+         → contributor SQL
+         → Guard + DB
+         → evidence-grounded answer
+```
 
-### Cache
-A TTL cache stores successful normalized SQL results. Cache hits are reported as an observability metric.
+Current example:
 
-## 4. Failure Handling
+> Why did sales decline?
+
+Default assumption: latest available week versus immediately preceding available week, followed by store contribution analysis.
+
+### Path C — unknown/open-ended question
+
+```text
+Question → LLM SQL generation → Guard → bounded repair → DB → LLM/fallback answer
+```
+
+This path remains deliberately constrained and observable.
+
+## 4. Security Boundary
+
+The LLM is never the security mechanism.
+
+```text
+LLM / planner output
+        ↓
+SQLGlot parser
+        ↓
+read-only policy
+        ↓
+allow-listed tables/columns
+        ↓
+validated SQL
+        ↓
+read-only DB execution
+```
+
+Trusted deterministic analytical plans may use repeated references internally, but they still pass through the parser and schema checks.
+
+## 5. Failure Handling
 
 | Failure | Behaviour |
 |---|---|
-| Empty question | Pydantic rejects request |
-| LLM unavailable | Trace records error; no unsafe execution |
-| Invalid SQL | Validation blocks execution |
-| Unknown table/column | Validation blocks execution |
-| Multiple statements | Validation blocks execution |
-| Validation failure | Up to configured repair attempts |
-| DB execution error | Error returned; no fabricated answer |
-| Empty result | Answer explicitly states no rows |
+| Empty/invalid request | Pydantic rejects request |
+| LLM unavailable | trace records error; no unsafe execution |
+| Invalid SQL | execution blocked |
+| Unknown table/column | execution blocked |
+| Multiple statements | execution blocked |
+| LLM validation failure | bounded repair |
+| DB execution error | controlled error; no fabricated answer |
+| Empty result | deterministic no-row response |
+| Analytical premise unsupported by data | report measured result rather than agreeing with premise |
 
-## 5. Security Boundary
+## 6. Observability
 
-The critical boundary is:
+Per-query metrics include:
 
-`LLM output -> SQL parser -> allow-list -> read-only execution`
+- total latency
+- row count
+- provider/model
+- input/output tokens
+- estimated cost
+- cache hit
+- repair attempts
+- planner/analysis usage
+- node-level trace
 
-The LLM is never trusted as a security mechanism.
+## 7. Scalability Path
 
-## 6. Scalability Path
-
-V0.2 is deliberately local-first. For production, the next changes are:
-
-- PostgreSQL read replica / warehouse adapter
-- Redis instead of in-process TTL cache
-- asynchronous query jobs for expensive queries
-- schema retrieval backed by embeddings/hybrid search
-- centralized tracing and metrics
+- PostgreSQL/warehouse adapter
+- Redis distributed cache
+- hybrid schema retrieval
+- asynchronous jobs for expensive analytics
+- query timeout/cost governance
 - tenant-aware authorization
-- query cost controls and timeout enforcement
+- centralized tracing and dashboards
 
-## 7. Key Design Trade-offs
+## 8. Design Principle
 
-### LangGraph vs a single function
-LangGraph makes state, retries and branching explicit. This is useful when validation/repair grows into additional tools.
-
-### Deterministic schema retrieval vs embeddings
-Deterministic retrieval is easier to test and requires no model. It is sufficient for a small catalog and gives a clean migration point to hybrid retrieval.
-
-### Mock provider
-Mock mode guarantees a zero-key local demo and deterministic CI tests. It is not presented as a measure of real LLM quality.
-
-## 8. Mermaid Component View
-
-```mermaid
-flowchart LR
-    U[User / UI] --> API[FastAPI]
-    API --> G[LangGraph Orchestrator]
-    G --> SR[Schema Retrieval]
-    G --> LLM[LLM Provider]
-    G --> V[SQL Validator]
-    V -->|valid| C[TTL Cache]
-    V -->|invalid| R[Bounded Repair]
-    R --> LLM
-    C -->|miss| DB[(Analytics DB)]
-    C -->|hit| A[Answer Generator]
-    DB --> A
-    A --> O[Trace + Metrics]
-```
-
-
-## V0.2.6 Intent Planning Layer
-
-The SQL generation path now uses a hybrid strategy:
-
-```text
-User Question
-      |
-      v
-Schema Retrieval
-      |
-      v
-Intent Planner
-   /       \
-Known       Unknown
- |             |
- v             v
-Deterministic  LLM SQL
-SQL Plan       Generation
- \             /
-  \           /
-    v       v
-      SQL Guard
-          |
-          v
-       Execute
-```
-
-The planner is deliberately conservative. It only takes ownership of
-high-confidence analytical intents. Unknown/ambiguous questions remain on the
-LLM path.
+**Use generative AI where ambiguity requires it; use deterministic engineering where the business intent is sufficiently constrained.**

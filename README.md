@@ -1,492 +1,251 @@
-# Enterprise Analytics Copilot — V0.2.1
+# Enterprise Analytics Copilot — V0.2.7
 
+A local-first enterprise analytics copilot that turns natural-language business questions into safe SQL and evidence-grounded analytical answers.
 
-Production-oriented local reference implementation for **NL2SQL + analytics reasoning**.
+## What makes V0.2.7 different
 
-This project is designed as a portfolio-grade Applied AI system rather than a simple `question -> LLM -> SQL` demo.
-
-## What V0.2 adds over V0.1
-
-- Business-aware schema retrieval
-- Provider abstraction: Mock / Ollama / Azure OpenAI
-- SQLGlot AST validation
-- Table/column allow-list enforcement
-- Bounded LLM SQL-repair loop
-- Read-only database execution boundary
-- Query result TTL cache
-- Token and estimated-cost tracking when provider usage is available
-- Node-level execution trace
-- Evaluation benchmark
-- PostgreSQL connection path for evolution beyond SQLite
-- Expanded tests and design documentation
-
-## Architecture
+This is deliberately **not** just:
 
 ```text
-                         +------------------+
-                         | Streamlit / REST |
-                         +--------+---------+
-                                  |
-                                  v
-                         +--------+---------+
-                         |      FastAPI      |
-                         +--------+---------+
-                                  |
-                                  v
-                       +----------+-----------+
-                       |    LangGraph Flow    |
-                       +----------+-----------+
-                                  |
-              +-------------------+-------------------+
-              |                   |                   |
-              v                   v                   v
-       Schema Retrieval      LLM Provider        Query Cache
-       + Business Context   Mock/Ollama/Azure       TTL
-              |                   |
-              +---------+---------+
-                        v
-                  SQL Validation
-                        |
-                  valid / repair
-                        |
-                        v
-                 Read-only DB
-                        |
-                        v
-              Grounded Answer + Trace
+Question → LLM → SQL
 ```
 
-## Core safety boundary
-
-The model is **not** trusted to enforce database safety.
+The current architecture routes the problem according to its structure:
 
 ```text
-LLM SQL
-  |
-  v
-SQL parser
-  |
-  +-- forbidden/malformed --> reject
-  |
-  v
-Table/column allow-list
-  |
-  +-- unknown -------------> reject
-  |
-  v
-Read-only execution
+                    Question
+                       |
+                Schema Retrieval
+                       |
+              Analytical Planner
+                 /           \
+             match          no match
+               |               |
+       Multi-step analysis   Intent Planner
+               |             /          \
+               |          known       unknown
+               |            |             |
+               |       Deterministic     LLM
+               |          SQL            SQL
+               |            \             /
+               |             \           /
+               +-------------- SQL Guard
+                              |
+                           Read-only DB
+                              |
+                         Evidence/Result
+                              |
+                         Business Answer
 ```
 
-## Local stack
+## Supported examples
 
-- Python 3.12
-- FastAPI
-- LangGraph
-- SQLGlot
-- SQLite by default
-- Optional PostgreSQL connection path
-- Streamlit
-- Ollama optional
-- Azure OpenAI optional
-- pytest
-- Docker / Docker Compose
+### Deterministic
 
-## Quick start
+- `Which stores have the highest sales?`
+- `Show sales by region`
+- `Which stores had the highest number of orders in January?`
+- `What is the average promo spend by region?`
+- `What were total sales last month?`
 
-### 1. Create environment
+### Analytical reasoning
 
-```bash
+- `Why did sales decline?`
+
+For this question, V0.2.7 uses the explicit assumption:
+
+> Compare the latest available week with the immediately preceding available week, then inspect store-level contributions.
+
+The system measures the data rather than accepting the user's premise as fact.
+
+## Repository structure
+
+```text
+app/
+├── agent.py
+├── api.py
+├── config.py
+├── db.py
+├── main.py
+├── schema.py
+└── services/
+    ├── analytical_planner.py
+    ├── cache.py
+    ├── intent_planner.py
+    ├── llm.py
+    ├── providers.py
+    ├── schema_catalog.py
+    └── sql_guard.py
+
+docs/
+├── EVOLUTION.md
+├── ARCHITECTURE_DECISIONS.md
+├── HLD.md
+├── LLD.md
+├── EVALUATION.md
+├── INTERVIEW_STORY.md
+├── TROUBLESHOOTING.md
+├── API_EXAMPLES.md
+└── decisions/
+
+scripts/
+├── init_db.py
+├── demo.py
+└── evaluate.py
+
+ui/
+└── streamlit_app.py
+
+tests/
+```
+
+## Local setup
+
+### 1. Create/activate virtual environment
+
+Windows CMD:
+
+```bat
 python -m venv .venv
-```
-
-Windows:
-
-```powershell
 .venv\Scripts\activate
 ```
 
-Linux/macOS:
+### 2. Install dependencies
 
-```bash
-source .venv/bin/activate
+```bat
+python -m pip install -r requirements.txt
 ```
 
-### 2. Install
+### 3. Configure environment
 
-```bash
-pip install -r requirements.txt
-```
-
-### 3. Configure
-
-```bash
-copy .env.example .env
-```
-
-or Linux/macOS:
-
-```bash
-cp .env.example .env
-```
-
-The default is:
+Copy:
 
 ```text
-LLM_PROVIDER=mock
-DB_BACKEND=sqlite
+.env.example → .env
 ```
 
-No API key is required for the deterministic demo.
+For Ollama:
 
-### 4. Load sample data
-
-```bash
-python scripts/init_db.py
+```env
+LLM_PROVIDER=ollama
+OLLAMA_BASE_URL=http://127.0.0.1:11434
+OLLAMA_MODEL=llama3.2:1b
 ```
 
-### 5. Start API
+For deterministic tests, `.env` does not matter; pytest forces the Mock provider.
 
-```bash
+### 4. Initialize the database
+
+Always run from the repository root:
+
+```bat
+python -m scripts.init_db
+```
+
+Expected:
+
+```text
+Loaded 16 rows into data/analytics.db
+```
+
+### 5. Run tests
+
+```bat
+python -m pytest -q
+```
+
+### 6. Start API
+
+```bat
 uvicorn app.main:app --reload
 ```
 
 Open:
 
-- API: `http://127.0.0.1:8000`
-- Swagger: `http://127.0.0.1:8000/docs`
-- Health: `http://127.0.0.1:8000/api/health`
+```text
+http://127.0.0.1:8000/docs
+```
 
-### 6. Start UI
+### 7. Start UI
 
 In another terminal:
 
-```bash
+```bat
 streamlit run ui/streamlit_app.py
 ```
 
-## Example questions
+## CLI demo
 
-Mock mode supports deterministic examples such as:
-
-```text
-Which stores have the highest sales?
-Show sales by region
-What is the average promo spend by region?
-Which store had the highest orders in January?
-Show monthly sales
-Show ads spend by region
+```bat
+python scripts/demo.py
 ```
-
-For open-ended NL2SQL, switch to Ollama or Azure OpenAI.
-
-## Ollama mode
-
-Set:
-
-```text
-LLM_PROVIDER=ollama
-OLLAMA_BASE_URL=http://localhost:11434
-OLLAMA_MODEL=qwen3
-```
-
-Start Ollama and make the selected model available locally, then run the API again.
-
-The provider requests structured JSON and uses temperature 0 for reproducibility-oriented behaviour.
-
-## Azure OpenAI mode
-
-Set:
-
-```text
-LLM_PROVIDER=azure_openai
-AZURE_OPENAI_ENDPOINT=<your-endpoint>
-AZURE_OPENAI_API_KEY=<your-key>
-AZURE_OPENAI_API_VERSION=<your-supported-api-version>
-AZURE_OPENAI_DEPLOYMENT=<your-deployment-name>
-```
-
-Do not commit `.env` or API keys.
-
-## API
-
-### `POST /api/query`
-
-Request:
-
-```json
-{
-  "question": "Show sales by region",
-  "include_sql": true
-}
-```
-
-Response includes:
-
-- generated SQL
-- validation result
-- result columns/rows
-- grounded answer
-- latency
-- provider/model
-- token counts where available
-- estimated cost using configured pricing
-- cache hit
-- repair attempts
-- node-level trace
-- retrieved schema items
-
-### `GET /api/health`
-
-Returns service, provider and database configuration.
 
 ## Evaluation
 
-Run:
-
-```bash
+```bat
 python scripts/evaluate.py
 ```
 
-Output is written to:
+The result is written to:
 
 ```text
 artifacts/evaluation.json
 ```
 
-Current local benchmark measures:
+## API
 
-- SQL validation pass
-- expected result-column contract
-- row count
-- latency
-- cache behaviour
-
-This is intentionally **not** claimed to be a full semantic NL2SQL benchmark. V0.3 should add trusted reference queries/results and semantic result equivalence.
-
-## Tests
-
-```bash
-pytest -q
-```
-
-Tests cover:
-
-- SELECT acceptance
-- mutation rejection
-- unknown column rejection
-- multi-statement rejection
-- schema retrieval
-- API health
-- deterministic query execution
-
-## Docker
-
-Create `.env`, then:
-
-```bash
-docker compose up --build
-```
-
-API:
-
-`http://localhost:8000`
-
-UI:
-
-`http://localhost:8501`
-
-## Project structure
+### Health
 
 ```text
-enterprise-analytics-copilot/
-├── app/
-│   ├── agent.py
-│   ├── api.py
-│   ├── config.py
-│   ├── db.py
-│   ├── main.py
-│   ├── schema.py
-│   └── services/
-│       ├── cache.py
-│       ├── llm.py
-│       ├── providers.py
-│       ├── schema_catalog.py
-│       └── sql_guard.py
-├── data/
-│   └── store_week.csv
-├── docs/
-│   ├── HLD.md
-│   ├── LLD.md
-│   ├── EVALUATION.md
-│   └── INTERVIEW_STORY.md
-├── scripts/
-│   ├── demo.py
-│   ├── evaluate.py
-│   └── init_db.py
-├── tests/
-├── ui/
-├── Dockerfile
-├── docker-compose.yml
-├── Makefile
-├── requirements.txt
-└── README.md
+GET /api/health
 ```
 
-## HLD / LLD
+### Query
 
-See:
-
-- `docs/HLD.md`
-- `docs/LLD.md`
-- `docs/EVALUATION.md`
-- `docs/INTERVIEW_STORY.md`
-
-## Engineering decisions
-
-### Why a provider abstraction?
-
-The orchestration should not depend on a specific model vendor. Mock mode gives deterministic CI; Ollama gives local LLM execution; Azure OpenAI provides an enterprise-cloud path.
-
-### Why schema retrieval before SQL generation?
-
-A large analytics schema creates ambiguity. Supplying only the relevant business definitions reduces unnecessary context and gives the model a narrower contract.
-
-### Why SQLGlot?
-
-String matching alone is insufficient for SQL validation. Parsing the statement allows structural checks before database execution.
-
-### Why bounded repair?
-
-An unlimited repair loop can create latency/cost runaway. V0.2 caps repair attempts through configuration.
-
-### Why cache normalized SQL results?
-
-Repeated analytical questions can generate the same normalized query. Caching avoids unnecessary DB work and provides a measurable latency optimization path.
-
-## Known limitations
-
-This is a portfolio reference implementation, not a production banking/financial analytics platform.
-
-Current limitations:
-
-1. SQLite is the default execution backend.
-2. Schema retrieval is lexical rather than vector/hybrid.
-3. The local benchmark is not a complete semantic accuracy benchmark.
-4. Authentication and authorization are not implemented.
-5. Query timeout governance is not yet enforced at database-driver level.
-6. In-process cache is not suitable for multi-instance deployment.
-7. Cost estimates depend on user-supplied pricing configuration.
-
-These limitations are deliberate and documented because a credible engineering portfolio should distinguish implemented capabilities from future production requirements.
-
-## V0.3 roadmap
-
-1. Trusted reference-query benchmark + semantic result equivalence
-2. Hybrid schema retrieval
-3. Redis distributed cache
-4. Query timeout and resource governance
-5. PostgreSQL/warehouse adapters
-6. Role-based and row-level authorization
-7. Evaluation dashboard
-8. Prompt/model regression comparison
-9. SQL query-plan inspection and optimization
-10. Production observability integration
-
-## Interview positioning
-
-The strongest interview story is not:
-
-> "I built an NL2SQL chatbot."
-
-It is:
-
-> "I designed a guarded analytics execution system where the LLM is one component inside a controlled pipeline. Schema context is retrieved, SQL is structurally validated, invalid queries can be repaired within a bounded budget, only validated read-only queries execute, results are cached, and latency/token/cost metrics are captured for evaluation."
-
-That distinction is the reason this project exists.
-
-
-## Troubleshooting
-See [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md).
-
-
-## Test isolation
-
-The test suite intentionally forces `LLM_PROVIDER=mock` so tests remain
-deterministic even when your local `.env` is configured for Ollama or Azure OpenAI.
-
-Run tests from the repository root:
-
-```bash
-python -m pytest -q
+```json
+POST /api/query
+{
+  "question": "Why did sales decline?",
+  "include_sql": true
+}
 ```
 
-The runtime application can still use:
+The response contains:
 
-```env
-LLM_PROVIDER=ollama
-```
+- business answer
+- generated SQL when applicable
+- result rows
+- validation status
+- latency/tokens/cost
+- planner/analysis usage
+- agent trace
+- retrieved schema
+- analytical steps/results when applicable
 
-without affecting the test suite.
+## Model strategy
 
-## V0.2.3
+The included `llama3.2:1b` configuration is a **baseline**, not a claim that 1B is the best model for NL2SQL.
 
-### SQL validation hardening
+V0.2.7 intentionally reduces the amount of work delegated to the model. A stronger model should be selected only after benchmarking the same workload on:
 
-The SQL guard now distinguishes **SELECT-list aliases** from physical database
-columns. For example:
+- correctness
+- latency
+- repair attempts
+- token usage
+- cost
+- local resource requirements
 
-```sql
-SELECT store_id, SUM(sales) AS total_sales
-FROM store_week
-GROUP BY store_id
-ORDER BY total_sales DESC
-```
+## Engineering evolution
 
-`total_sales` is an output alias, not a physical column. V0.2.2 incorrectly
-rejected this valid query as an unknown column, which caused the API to return
-HTTP 422 for the deterministic mock test.
+Read these in order:
 
-The test suite now explicitly covers this case.
+1. `docs/EVOLUTION.md` — what failed and why the architecture changed
+2. `docs/decisions/` — individual architectural decisions
+3. `docs/HLD.md` — current high-level architecture
+4. `docs/LLD.md` — implementation design
+5. `docs/EVALUATION.md` — how the system is measured
+6. `docs/INTERVIEW_STORY.md` — concise explanation for interviews
 
+## Security note
 
-## V0.2.4 — SQL generation/validation hardening
-
-The SQL guard now understands physical table aliases and explicitly rejects
-unnecessary self-joins for the current single-table demo schema. This prevents
-small local models from turning a simple aggregation such as "highest sales by
-store" into an invalid `T1`/`T2` self-join.
-
-The Ollama SQL prompt also contains explicit patterns for top-store aggregation
-and forbids unnecessary joins for the current schema.
-
-
-## V0.2.5 — Alias vs self-join validation fix
-
-A table alias such as `store_week AS sw` is valid and must not be classified as
-a self-join. The SQL guard now counts actual physical table occurrences rather
-than the number of alias names.
-
-This regression is covered by the SQL guard test suite.
-
-## V0.2.6 — Intent planning before NL2SQL
-
-V0.2.6 introduces a conservative **Intent Planner** before unconstrained LLM
-SQL generation.
-
-For high-confidence analytical intents such as:
-
-- highest/top stores by sales
-- highest/top stores by orders
-- sales by region
-- total sales last month
-- average promotion spend
-- advertising spend
-
-the system builds a validated SQL plan deterministically.
-
-Questions outside those patterns continue through the Ollama/Azure LLM path.
-
-This hybrid approach is intentional: the LLM is used where language ambiguity
-requires it, while deterministic logic handles high-confidence business
-queries. The goal is to improve correctness, latency, and reproducibility
-without pretending that a 1B local model is a production-grade SQL planner.
+This is a portfolio/reference implementation, not a production security certification. SQL is parsed, constrained to read-only operations and checked against the demo schema before execution. Production deployment still requires authentication, authorization, tenant isolation, secrets management, database permissions and operational controls.

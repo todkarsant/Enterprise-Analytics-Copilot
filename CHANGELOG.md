@@ -1,37 +1,42 @@
 # Changelog
 
+## 0.2.7
+
+- Added `analytical_planner.py` for supported diagnostic/comparison questions.
+- Added end-to-end `Why did sales decline?` workflow.
+- Added latest-vs-previous-period sales comparison.
+- Added store-level contributor analysis.
+- Added evidence-grounded deterministic analytical answers.
+- Deterministic intents no longer spend an LLM call on answer summarization.
+- Added structured analytical results to the API response.
+- Replaced deprecated FastAPI startup event with lifespan.
+- Improved Streamlit error presentation so raw FastAPI error JSON is not the primary user-facing message.
+- Added `EVOLUTION.md` and architecture decision records.
+- Expanded evaluation script and regression tests.
+- Preserved `llama3.2:1b` as a baseline rather than changing models without benchmark evidence.
+
 ## 0.2.6
 
 - Added a conservative deterministic Intent Planner before LLM SQL generation.
-- Added high-confidence templates for top stores by sales/orders, regional sales,
-  last-month total sales, promotion spend, and advertising spend.
+- Added high-confidence templates for top stores by sales/orders, regional sales, last-month total sales, promotion spend, and advertising spend.
 - Added planner observability fields: `planner_used` and `intent`.
-- Added planner regression tests.
-- Unknown/ambiguous questions continue to the LLM path.
 
 ## 0.2.5
 
 - Fixed false-positive self-join detection for valid physical table aliases.
-- Added regression coverage for `store_week AS sw`.
 
 ## 0.2.4
 
-- Added physical table alias resolution.
-- Added unnecessary self-join detection for the single-table demo schema.
-- Strengthened Ollama SQL-generation instructions for top-store aggregation.
+- Added physical table alias resolution and unnecessary self-join detection.
 
 ## 0.2.3
 
 - Fixed SQL guard rejection of valid SELECT aliases.
-- Added regression tests for alias handling.
 
 ## 0.2.2
 
-- Isolated pytest from the developer's `.env` by forcing the Mock LLM provider.
-- Added deterministic API assertions for the mock provider.
-- Added request validation coverage.
+- Isolated pytest from developer `.env` by forcing Mock provider in tests.
 
 ## 0.2.1
 
 - Added robust Ollama JSON parsing and deterministic answer fallback.
-- Improved relative-date SQL guidance.

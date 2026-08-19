@@ -11,14 +11,7 @@ FORBIDDEN = {
 }
 
 
-def _table_alias_map(tree: exp.Select) -> tuple[dict[str, str], set[str]]:
-    """Return physical/alias table names and derived-table aliases.
-
-    For a physical table such as `store_week AS t1`, t1 maps to store_week.
-    Derived-table aliases are tracked separately so their projected columns can
-    be validated by the database/repair loop rather than being mistaken for
-    physical tables.
-    """
+def _table_alias_map(tree: exp.Expression) -> tuple[dict[str, str], set[str]]:
     physical_aliases: dict[str, str] = {}
     derived_aliases: set[str] = set()
 
@@ -29,13 +22,33 @@ def _table_alias_map(tree: exp.Select) -> tuple[dict[str, str], set[str]]:
             physical_aliases[name] = name
             if alias:
                 physical_aliases[alias] = name
-        else:
-            derived_aliases.add(alias or name)
+
+    # CTEs and derived subqueries are validated internally; their output columns
+    # are not physical schema columns and therefore must not be mistaken for
+    # unknown base-table columns.
+    for cte in tree.find_all(exp.CTE):
+        if cte.alias:
+            derived_aliases.add(cte.alias)
+    for subquery in tree.find_all(exp.Subquery):
+        if subquery.alias:
+            derived_aliases.add(subquery.alias)
 
     return physical_aliases, derived_aliases
 
 
-def validate_sql(sql: str, max_length: int = 4000) -> tuple[bool, str, str | None]:
+def validate_sql(
+    sql: str,
+    max_length: int = 4000,
+    *,
+    allow_repeated_table_references: bool = False,
+) -> tuple[bool, str, str | None]:
+    """Validate one read-only SQL statement against the known schema.
+
+    The default path is intentionally strict for LLM-generated SQL and rejects
+    repeated references to the single demo fact table. Trusted deterministic
+    analytical plans can opt into repeated references while remaining subject
+    to parsing, allow-list, and read-only checks.
+    """
     sql = sql.strip().strip("`").strip()
     if not sql:
         return False, "SQL is empty.", None
@@ -49,15 +62,16 @@ def validate_sql(sql: str, max_length: int = 4000) -> tuple[bool, str, str | Non
     forbidden = sorted(tokens.intersection(FORBIDDEN))
     if forbidden:
         return False, f"Forbidden SQL operation: {', '.join(forbidden)}.", None
-    if not lowered.startswith("select"):
-        return False, "Only SELECT statements are allowed.", None
+    if not lowered.startswith(("select", "with")):
+        return False, "Only read-only SELECT statements are accepted.", None
 
     try:
         tree = sqlglot.parse_one(sql, read="sqlite")
     except Exception as exc:
         return False, f"SQL parser rejected the statement: {exc}", None
 
-    if not isinstance(tree, exp.Select):
+    select = tree.find(exp.Select)
+    if select is None:
         return False, "Only SELECT statements are accepted.", None
 
     physical_aliases, derived_aliases = _table_alias_map(tree)
@@ -70,24 +84,19 @@ def validate_sql(sql: str, max_length: int = 4000) -> tuple[bool, str, str | Non
     unknown_physical_tables = {
         table.name
         for table in tree.find_all(exp.Table)
-        if table.name not in ALLOWED_TABLES
+        if table.name not in ALLOWED_TABLES and table.name not in derived_aliases
     }
     if unknown_physical_tables:
         return False, f"Unknown table(s): {', '.join(sorted(unknown_physical_tables))}.", None
 
-    # An alias such as `store_week AS sw` creates two names for one physical
-    # table, so alias count must NOT be used to detect a self-join. Count the
-    # actual physical-table occurrences instead.
     physical_table_occurrences = [
-        table.name
-        for table in tree.find_all(exp.Table)
-        if table.name in ALLOWED_TABLES
+        table.name for table in tree.find_all(exp.Table) if table.name in ALLOWED_TABLES
     ]
-
-    # The current demo schema has one physical table. A self-join / derived
-    # self-join adds complexity without adding information and is a common
-    # failure mode for small local models. Ask the repair loop to simplify it.
-    if len(physical_table_occurrences) > 1 and len(physical_tables) == 1:
+    if (
+        not allow_repeated_table_references
+        and len(physical_table_occurrences) > 1
+        and len(physical_tables) == 1
+    ):
         return (
             False,
             "Unnecessary self-join or repeated store_week reference detected. "
@@ -96,9 +105,7 @@ def validate_sql(sql: str, max_length: int = 4000) -> tuple[bool, str, str | Non
         )
 
     select_aliases = {
-        alias.alias
-        for alias in tree.find_all(exp.Alias)
-        if alias.alias
+        alias.alias for alias in tree.find_all(exp.Alias) if alias.alias
     }
 
     for column in tree.find_all(exp.Column):
@@ -109,19 +116,15 @@ def validate_sql(sql: str, max_length: int = 4000) -> tuple[bool, str, str | Non
                 if column.name != "*" and column.name not in ALLOWED_COLUMNS[physical_table]:
                     return False, f"Unknown column: {qualifier}.{column.name}.", None
                 continue
-
             if qualifier in derived_aliases:
-                return False, (
-                    f"Unknown derived-table column reference: {qualifier}.{column.name}. "
-                    "Use columns projected by the subquery or simplify to the base table."
-                ), None
-
+                continue
             return False, f"Unknown table reference: {qualifier}.", None
 
         if column.name in select_aliases:
             continue
-
         if column.name != "*" and column.name not in ALLOWED_COLUMNS["store_week"]:
+            # Columns belonging to CTEs/subqueries are handled through their
+            # qualified aliases. Unqualified names still need base-schema checks.
             return False, f"Unknown column: {column.name}.", None
 
     normalized = tree.sql(dialect="sqlite")

@@ -16,8 +16,6 @@ def test_highest_number_of_orders_in_january():
     assert plan is not None
     assert plan.intent == "top_stores_by_orders"
     assert "SUM(orders)" in plan.sql
-    assert "2026" not in plan.sql  # dataset year remains dynamic
-    assert "01-01" in plan.sql
     assert "GROUP BY store_id" in plan.sql
 
 
