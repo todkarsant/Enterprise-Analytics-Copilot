@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.9
+
+- Fixed SQL guard handling of aliases applied to CTE relations, e.g. `FROM periods p`.
+- Added explicit support for CTE names and their outer-scope aliases in the read-only SQL guard.
+- Preserved strict physical-schema validation for base-table columns.
+- Fixed the V0.2.8 `sales_decline_analysis` end-to-end 422 regression.
+
+
 ## 0.2.8
 
 - Fixed SQL guard handling of CTE-derived output columns in trusted analytical plans.

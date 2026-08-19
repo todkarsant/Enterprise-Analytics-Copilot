@@ -15,6 +15,15 @@ def _table_alias_map(tree: exp.Expression) -> tuple[dict[str, str], set[str]]:
     physical_aliases: dict[str, str] = {}
     derived_aliases: set[str] = set()
 
+    # First collect CTE names. A later FROM periods AS p is a reference to a
+    # derived relation, not a physical table in the allow-listed schema.
+    cte_names: set[str] = set()
+    for cte in tree.find_all(exp.CTE):
+        name = cte.alias_or_name
+        if name:
+            cte_names.add(name)
+            derived_aliases.add(name)
+
     for table in tree.find_all(exp.Table):
         name = table.name
         alias = table.alias_or_name
@@ -22,16 +31,16 @@ def _table_alias_map(tree: exp.Expression) -> tuple[dict[str, str], set[str]]:
             physical_aliases[name] = name
             if alias:
                 physical_aliases[alias] = name
+        elif name in cte_names:
+            # Both the CTE name and its table alias are valid qualifiers.
+            derived_aliases.add(name)
+            if alias:
+                derived_aliases.add(alias)
 
-    # CTEs and derived subqueries are validated internally; their output columns
-    # are not physical schema columns and therefore must not be mistaken for
-    # unknown base-table columns.
-    for cte in tree.find_all(exp.CTE):
-        alias = cte.alias
-        if alias:
-            derived_aliases.add(alias)
+    # Derived subqueries are validated internally; their aliases are valid
+    # outer-scope relation qualifiers.
     for subquery in tree.find_all(exp.Subquery):
-        alias = subquery.alias
+        alias = subquery.alias_or_name
         if alias:
             derived_aliases.add(alias)
 

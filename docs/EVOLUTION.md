@@ -276,3 +276,19 @@ These are intentionally not implemented as V0.2.7 requirements:
 6. query cost governance
 7. row-level authorization
 8. production tracing
+
+
+## V0.2.9 — CTE relation alias validation regression
+
+Observed during V0.2.8 integration testing:
+
+```text
+period_comparison → Unknown table reference: p
+HTTP 422
+```
+
+Root cause: the SQL guard understood CTE names such as `periods`, but did not register an outer relation alias such as `periods p`. The validator therefore rejected valid qualified references such as `p.latest_week`.
+
+Fix: the guard now registers both the CTE relation name and its table alias as derived relations. This keeps the physical schema allow-list strict while allowing trusted analytical CTEs to reference their own projected columns.
+
+This is recorded as a regression because the V0.2.8 CTE support was incomplete at the relation-alias level.
