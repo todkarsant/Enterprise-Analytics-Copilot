@@ -249,3 +249,10 @@ Read these in order:
 ## Security note
 
 This is a portfolio/reference implementation, not a production security certification. SQL is parsed, constrained to read-only operations and checked against the demo schema before execution. Production deployment still requires authentication, authorization, tenant isolation, secrets management, database permissions and operational controls.
+
+## V0.2.8 — Analytical CTE validation fix
+
+The analytical reasoning path uses trusted, code-owned multi-step CTE queries.
+V0.2.8 fixes the SQL guard so CTE/derived-query output columns are recognized in
+outer query scopes while the read-only and allowed-base-table checks remain in
+place.

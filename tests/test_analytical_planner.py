@@ -12,3 +12,16 @@ def test_sales_decline_plan_is_conservative_and_multi_step():
 
 def test_non_decline_question_does_not_enter_analysis_path():
     assert plan_analytical_question("Which stores have the highest sales?") is None
+
+
+def test_both_decline_plan_steps_pass_trusted_sql_guard():
+    from app.services.sql_guard import validate_sql
+
+    plan = plan_analytical_question("Why did sales decline?")
+    assert plan is not None
+    for step in plan.steps:
+        valid, reason, normalized = validate_sql(
+            step.sql, allow_repeated_table_references=True
+        )
+        assert valid is True, f"{step.name}: {reason}"
+        assert normalized

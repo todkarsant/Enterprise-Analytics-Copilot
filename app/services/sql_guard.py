@@ -27,13 +27,44 @@ def _table_alias_map(tree: exp.Expression) -> tuple[dict[str, str], set[str]]:
     # are not physical schema columns and therefore must not be mistaken for
     # unknown base-table columns.
     for cte in tree.find_all(exp.CTE):
-        if cte.alias:
-            derived_aliases.add(cte.alias)
+        alias = cte.alias
+        if alias:
+            derived_aliases.add(alias)
     for subquery in tree.find_all(exp.Subquery):
-        if subquery.alias:
-            derived_aliases.add(subquery.alias)
+        alias = subquery.alias
+        if alias:
+            derived_aliases.add(alias)
 
     return physical_aliases, derived_aliases
+
+
+def _derived_output_columns(tree: exp.Expression) -> set[str]:
+    """Collect columns projected by CTEs/derived SELECTs.
+
+    These names are valid in outer query scopes even though they are not physical
+    columns in the base schema. This is used only for trusted deterministic
+    analytical plans.
+    """
+    outputs: set[str] = set()
+    for cte in tree.find_all(exp.CTE):
+        query = cte.this
+        if isinstance(query, exp.Subquery):
+            query = query.this
+        if isinstance(query, exp.Select):
+            for expression in query.expressions:
+                if isinstance(expression, exp.Alias):
+                    outputs.add(expression.alias)
+                elif isinstance(expression, exp.Column):
+                    outputs.add(expression.name)
+    for subquery in tree.find_all(exp.Subquery):
+        query = subquery.this
+        if isinstance(query, exp.Select):
+            for expression in query.expressions:
+                if isinstance(expression, exp.Alias):
+                    outputs.add(expression.alias)
+                elif isinstance(expression, exp.Column):
+                    outputs.add(expression.name)
+    return outputs
 
 
 def validate_sql(
@@ -107,6 +138,7 @@ def validate_sql(
     select_aliases = {
         alias.alias for alias in tree.find_all(exp.Alias) if alias.alias
     }
+    derived_output_columns = _derived_output_columns(tree) if allow_repeated_table_references else set()
 
     for column in tree.find_all(exp.Column):
         if column.table:
@@ -120,7 +152,7 @@ def validate_sql(
                 continue
             return False, f"Unknown table reference: {qualifier}.", None
 
-        if column.name in select_aliases:
+        if column.name in select_aliases or column.name in derived_output_columns:
             continue
         if column.name != "*" and column.name not in ALLOWED_COLUMNS["store_week"]:
             # Columns belonging to CTEs/subqueries are handled through their
