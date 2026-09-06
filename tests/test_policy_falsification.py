@@ -41,10 +41,11 @@ def test_p5_low_risk_case_stops_without_extra_expensive_action():
     assert state.cost <= 0.05
 
 
-def test_no_test_asserts_p6_superiority_before_p6_exists():
-    source = inspect.getsource(inspect.getmodule(inspect.currentframe()))
-    assert "p6_evidence_policy" not in source
-    assert "paper contribution" not in source
+def test_no_baseline_test_asserts_p6_superiority_before_p6_exists():
+    for policy in POLICIES:
+        source = inspect.getsource(policy)
+        assert "p6_evidence_policy" not in source
+        assert "paper contribution" not in source
 
 
 def test_budget_exhaustion_is_explicit_and_not_correctness():
