@@ -16,7 +16,8 @@ class Evidence:
 @dataclass
 class State:
     question: str
-    answerable: bool = True  # evaluator-only; policies must not inspect this field
+    # Evaluator-only reference label. Policies must not inspect it.
+    answerable: bool = True
     ambiguity: float = 0.0
     sql_valid: bool | None = None
     semantic_risk: float = 0.0
@@ -28,6 +29,8 @@ class State:
     cost: float = 0.0
     latency_ms: float = 0.0
     budget: float = 1.0
+    terminated: bool = False
+    termination_reason: str | None = None
 
 @dataclass(frozen=True)
 class ActionProfile:
@@ -47,7 +50,7 @@ DEFAULT_PROFILES = {
 }
 
 class ActionEnvironment:
-    """Deterministic harness environment; it is not a model-quality benchmark."""
+    """Deterministic mechanics fixture, not a model-quality benchmark."""
     def __init__(self, profiles: dict[str, ActionProfile] | None = None):
         self.profiles = profiles or DEFAULT_PROFILES
 
@@ -57,6 +60,7 @@ class ActionEnvironment:
         state.cost += p.cost
         state.latency_ms += p.latency_ms
         state.budget -= p.cost
+
         if action == "retrieve_schema":
             state.evidence.append(Evidence("schema", "retrieved"))
         elif action == "deterministic_execute":
@@ -91,6 +95,7 @@ class ActionEnvironment:
 
 PolicyFn = Callable[[State], Action]
 
+
 def query_complexity(state: State) -> float:
     q = state.question.lower()
     score = min(1.0, 0.15 + 0.08 * len(q.split()))
@@ -100,60 +105,99 @@ def query_complexity(state: State) -> float:
         score += 0.25
     return min(score, 1.0)
 
-def p5_post_evidence_cascade(state: State) -> Action:
-    """Cheapest-first baseline with post-execution evidence."""
+
+def p0_always_llm(state: State) -> Action:
+    """Reference policy: always attempt generation, with mandatory governance checks."""
     if not state.actions:
-        return "deterministic_execute"
+        return "abstain" if not state.governance_ok else "generate_sql"
+    if state.sql_valid is False:
+        return "repair_sql"
+    if state.execution_ok is None and state.sql_valid:
+        return "execute_sql"
+    if state.execution_ok is True:
+        return "abstain"
+    return "abstain"
+
+
+def p1_deterministic_only(state: State) -> Action:
+    if not state.actions:
+        return "deterministic_execute" if state.governance_ok else "abstain"
+    return "abstain"
+
+
+def p2_static_hybrid(state: State) -> Action:
+    if not state.actions:
+        if not state.governance_ok:
+            return "abstain"
+        return "deterministic_execute" if state.semantic_risk < 0.25 and state.ambiguity < 0.25 else "generate_sql"
+    if state.sql_valid is False:
+        return "repair_sql"
+    if state.execution_ok is None and state.sql_valid:
+        return "execute_sql"
+    return "abstain"
+
+
+def p3_query_complexity_router(state: State) -> Action:
+    if not state.actions:
+        if not state.governance_ok:
+            return "abstain"
+        return "generate_sql" if query_complexity(state) >= 0.45 else "deterministic_execute"
+    if state.sql_valid is False:
+        return "repair_sql"
+    if state.execution_ok is None and state.sql_valid:
+        return "execute_sql"
+    return "abstain"
+
+
+def p4_query_confidence_router(state: State) -> Action:
+    if not state.actions:
+        if not state.governance_ok:
+            return "abstain"
+        confidence = 1.0 - min(1.0, 0.5 * state.semantic_risk + 0.5 * state.ambiguity)
+        return "deterministic_execute" if confidence >= 0.75 else "generate_sql"
+    if state.sql_valid is False:
+        return "repair_sql"
+    if state.execution_ok is None and state.sql_valid:
+        return "execute_sql"
+    return "abstain"
+
+
+def p5_post_evidence_cascade(state: State) -> Action:
+    """Strongest pre-P6 reference: cheap action, inspect resulting evidence, then escalate."""
+    if not state.actions:
+        return "deterministic_execute" if state.governance_ok else "abstain"
     if state.execution_ok is True and state.ambiguity < 0.25 and state.semantic_risk < 0.25:
         return "abstain"
     if state.sql_valid is False:
         return "repair_sql"
     if state.verification_confidence is None:
         return "verify_sql"
-    return "agentic_escalation"
-
-def p6_evidence_policy(state: State) -> Action:
-    """Transparent reference policy for harness validation; not a claimed contribution."""
-    q = state.question.lower()
-    if not state.actions:
-        if "answerable" in q and "available data" in q:
-            return "abstain"
-        if not state.governance_ok:
-            return "abstain"
-        if state.ambiguity >= 0.65:
-            return "clarify"
-        if state.semantic_risk <= 0.25:
-            return "deterministic_execute"
-        return "retrieve_schema"
-    if not state.governance_ok:
-        return "abstain"
-    if state.actions[-1] == "clarify":
-        return "deterministic_execute"
-    if state.actions[-1] == "retrieve_schema":
-        return "generate_sql"
-    if state.execution_ok is True and state.semantic_risk <= 0.25 and state.ambiguity <= 0.25:
-        return "abstain"
-    if state.sql_valid is False:
-        return "repair_sql"
-    if state.verification_confidence is None:
-        return "verify_sql"
-    if state.verification_confidence >= 0.80:
-        return "abstain"
-    if state.ambiguity >= 0.50:
-        return "clarify"
-    if state.semantic_risk >= 0.55:
+    if state.semantic_risk >= 0.55 or state.ambiguity >= 0.50:
         return "agentic_escalation"
-    return "execute_sql"
+    return "abstain"
+
 
 def run_policy(initial: State, policy: PolicyFn, env: ActionEnvironment, max_steps: int = 8) -> State:
+    """Execute a policy until explicit abstention, budget exhaustion, or step limit."""
     state = initial
     for _ in range(max_steps):
+        if state.terminated:
+            break
         action = policy(state)
         if action == "abstain":
             state.actions.append("abstain")
+            state.cost += env.profiles["abstain"].cost
+            state.latency_ms += env.profiles["abstain"].latency_ms
+            state.terminated = True
+            state.termination_reason = "policy_abstain"
             break
         if state.budget < env.profiles[action].cost:
             state.actions.append("abstain")
+            state.terminated = True
+            state.termination_reason = "budget_exhausted"
             break
         env.apply(state, action)
+    if not state.terminated:
+        state.terminated = True
+        state.termination_reason = "step_limit"
     return state
