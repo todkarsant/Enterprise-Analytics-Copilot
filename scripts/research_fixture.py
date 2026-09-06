@@ -2,17 +2,34 @@ import json
 from pathlib import Path
 
 from research.evaluator import coverage, evaluate_state, reliability
-from research.experiment import ActionEnvironment, p5_post_evidence_cascade, p6_evidence_policy, run_policy
+from research.experiment import (
+    ActionEnvironment,
+    p0_always_llm,
+    p1_deterministic_only,
+    p2_static_hybrid,
+    p3_query_complexity_router,
+    p4_query_confidence_router,
+    p5_post_evidence_cascade,
+    run_policy,
+)
 from research.fixtures import cases
 
 POLICIES = {
+    "P0": p0_always_llm,
+    "P1": p1_deterministic_only,
+    "P2": p2_static_hybrid,
+    "P3": p3_query_complexity_router,
+    "P4": p4_query_confidence_router,
     "P5": p5_post_evidence_cascade,
-    "P6": p6_evidence_policy,
 }
 
 
 def run():
-    output = {}
+    output = {
+        "status": "baseline_characterization_only",
+        "warning": "Synthetic mechanics fixture. These results are not evidence of research superiority.",
+        "policies": {},
+    }
     for name, policy in POLICIES.items():
         outcomes = []
         rows = []
@@ -27,8 +44,9 @@ def run():
                 "cost": round(outcome.cost, 4),
                 "latency_ms": round(outcome.latency_ms, 2),
                 "actions": state.actions,
+                "termination_reason": state.termination_reason,
             })
-        output[name] = {
+        output["policies"][name] = {
             "reliability": reliability(outcomes),
             "coverage": coverage(outcomes),
             "mean_cost": sum(o.cost for o in outcomes) / len(outcomes),
