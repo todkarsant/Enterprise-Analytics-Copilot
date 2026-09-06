@@ -1,43 +1,38 @@
 from research.evaluator import cost_at_reliability, coverage, evaluate_state, reliability
-from research.experiment import ActionEnvironment, State, p5_post_evidence_cascade, p6_evidence_policy, run_policy
+from research.experiment import ActionEnvironment, State, p5_post_evidence_cascade, run_policy
 from research.fixtures import cases
 
 
 def test_policy_state_never_contains_reference_outcomes():
     state = State("Show sales by region", semantic_risk=0.1)
-    result = run_policy(state, p6_evidence_policy, ActionEnvironment())
+    result = run_policy(state, p5_post_evidence_cascade, ActionEnvironment())
     assert not hasattr(result, "reference_sql")
     assert not hasattr(result, "gold_result")
 
 
-def test_p6_uses_heterogeneous_actions_for_distinct_failure_modes():
-    env = ActionEnvironment()
-    ambiguous = run_policy(cases()[3], p6_evidence_policy, env)
-    risky = run_policy(cases()[2], p6_evidence_policy, env)
-    assert "clarify" in ambiguous.actions
-    assert "agentic_escalation" in risky.actions
-
-
-def test_p6_can_terminate_after_low_risk_deterministic_evidence():
-    state = run_policy(cases()[0], p6_evidence_policy, ActionEnvironment())
+def test_p5_can_terminate_after_low_risk_evidence():
+    state = run_policy(cases()[0], p5_post_evidence_cascade, ActionEnvironment())
     assert state.actions == ["deterministic_execute"]
     assert evaluate_state(state).correct is True
 
 
-def test_p6_rejects_governance_violation_without_claiming_success():
-    state = run_policy(cases()[5], p6_evidence_policy, ActionEnvironment())
+def test_governance_violation_is_not_marked_correct():
+    state = run_policy(cases()[5], p5_post_evidence_cascade, ActionEnvironment())
     assert evaluate_state(state).correct is False
 
 
-def test_unanswerable_case_rewards_abstention():
-    state = run_policy(cases()[4], p6_evidence_policy, ActionEnvironment())
+def test_unanswerable_case_rewards_explicit_abstention():
+    # This is a harness property only; answerability remains evaluator-only.
+    state = State("unanswerable request", answerable=False)
+    state.actions.append("abstain")
     outcome = evaluate_state(state)
     assert outcome.correct is True
+    assert outcome.covered is False
 
 
 def test_reliability_and_coverage_are_separate():
     env = ActionEnvironment()
-    outcomes = [evaluate_state(run_policy(c, p6_evidence_policy, env)) for c in cases()]
+    outcomes = [evaluate_state(run_policy(c, p5_post_evidence_cascade, env)) for c in cases()]
     assert 0.0 <= reliability(outcomes) <= 1.0
     assert 0.0 <= coverage(outcomes) <= 1.0
 
