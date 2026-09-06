@@ -118,11 +118,15 @@ def p6_evidence_policy(state: State) -> Action:
     if not state.actions:
         if "answerable" in q and "available data" in q:
             return "abstain"
+        if not state.governance_ok:
+            return "abstain"
         if state.ambiguity >= 0.65:
             return "clarify"
-        if state.semantic_risk <= 0.25 and state.governance_ok:
+        if state.semantic_risk <= 0.25:
             return "deterministic_execute"
         return "retrieve_schema"
+    if not state.governance_ok:
+        return "abstain"
     if state.actions[-1] == "clarify":
         return "deterministic_execute"
     if state.actions[-1] == "retrieve_schema":
