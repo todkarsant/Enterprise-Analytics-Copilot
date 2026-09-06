@@ -7,6 +7,9 @@ on:
       - "research/**"
   pull_request:
 
+env:
+  PYTHONPATH: .
+
 jobs:
   test:
     runs-on: ubuntu-latest
