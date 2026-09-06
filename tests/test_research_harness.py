@@ -12,7 +12,9 @@ def test_policy_state_never_contains_reference_outcomes():
 
 def test_p5_can_terminate_after_low_risk_evidence():
     state = run_policy(cases()[0], p5_post_evidence_cascade, ActionEnvironment())
-    assert state.actions == ["deterministic_execute"]
+    # The harness records explicit abstention as the terminal marker; it is not
+    # an additional expensive analytical action.
+    assert state.actions == ["deterministic_execute", "abstain"]
     assert evaluate_state(state).correct is True
 
 
