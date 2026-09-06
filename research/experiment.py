@@ -4,15 +4,8 @@ from dataclasses import dataclass, field
 from typing import Any, Callable, Literal
 
 Action = Literal[
-    "deterministic_execute",
-    "retrieve_schema",
-    "generate_sql",
-    "execute_sql",
-    "verify_sql",
-    "repair_sql",
-    "clarify",
-    "agentic_escalation",
-    "abstain",
+    "deterministic_execute", "retrieve_schema", "generate_sql", "execute_sql",
+    "verify_sql", "repair_sql", "clarify", "agentic_escalation", "abstain",
 ]
 
 @dataclass(frozen=True)
@@ -23,7 +16,7 @@ class Evidence:
 @dataclass
 class State:
     question: str
-    answerable: bool = True
+    answerable: bool = True  # evaluator-only; policies must not inspect this field
     ambiguity: float = 0.0
     sql_valid: bool | None = None
     semantic_risk: float = 0.0
@@ -54,7 +47,7 @@ DEFAULT_PROFILES = {
 }
 
 class ActionEnvironment:
-    """Deterministic test environment. It models evidence production, not model quality."""
+    """Deterministic harness environment; it is not a model-quality benchmark."""
     def __init__(self, profiles: dict[str, ActionProfile] | None = None):
         self.profiles = profiles or DEFAULT_PROFILES
 
@@ -64,28 +57,25 @@ class ActionEnvironment:
         state.cost += p.cost
         state.latency_ms += p.latency_ms
         state.budget -= p.cost
-
         if action == "retrieve_schema":
             state.evidence.append(Evidence("schema", "retrieved"))
         elif action == "deterministic_execute":
-            if state.ambiguity < 0.25 and state.semantic_risk < 0.25 and state.governance_ok:
-                state.execution_ok = True
-                state.sql_valid = True
-                state.evidence.append(Evidence("execution", "deterministic_success"))
-            else:
-                state.execution_ok = False
-                state.evidence.append(Evidence("execution", "insufficient_confidence"))
+            ok = state.ambiguity < 0.25 and state.semantic_risk < 0.25 and state.governance_ok
+            state.execution_ok = ok
+            state.sql_valid = ok
+            state.evidence.append(Evidence("execution", ok))
         elif action == "generate_sql":
             state.sql_valid = state.semantic_risk < 0.65
             state.execution_ok = None
             state.evidence.append(Evidence("generation", state.sql_valid))
         elif action == "execute_sql":
-            state.execution_ok = bool(state.sql_valid and state.governance_ok and state.semantic_risk < 0.75)
-            state.evidence.append(Evidence("execution", state.execution_ok))
+            ok = bool(state.sql_valid and state.governance_ok and state.semantic_risk < 0.75)
+            state.execution_ok = ok
+            state.evidence.append(Evidence("execution", ok))
         elif action == "verify_sql":
-            # In the fixture environment verification observes latent risk but never exposes gold labels.
-            state.verification_confidence = max(0.0, 1.0 - state.semantic_risk - 0.35 * state.ambiguity)
-            state.evidence.append(Evidence("verification", state.verification_confidence))
+            conf = max(0.0, 1.0 - state.semantic_risk - 0.35 * state.ambiguity)
+            state.verification_confidence = conf
+            state.evidence.append(Evidence("verification", conf))
         elif action == "repair_sql":
             state.sql_valid = True
             state.semantic_risk = max(0.0, state.semantic_risk - 0.20)
@@ -111,11 +101,11 @@ def query_complexity(state: State) -> float:
     return min(score, 1.0)
 
 def p5_post_evidence_cascade(state: State) -> Action:
-    """Strong cheapest-first cascade: execute cheap path, then verify/escalate."""
+    """Cheapest-first baseline with post-execution evidence."""
     if not state.actions:
         return "deterministic_execute"
     if state.execution_ok is True and state.ambiguity < 0.25 and state.semantic_risk < 0.25:
-        return "abstain"  # abstain here means terminate; no additional action cost.
+        return "abstain"
     if state.sql_valid is False:
         return "repair_sql"
     if state.verification_confidence is None:
@@ -123,13 +113,11 @@ def p5_post_evidence_cascade(state: State) -> Action:
     return "agentic_escalation"
 
 def p6_evidence_policy(state: State) -> Action:
-    """Reference heterogeneous policy used for harness validation.
-
-    This is intentionally a transparent rule policy, not a learned algorithm and not
-    a paper contribution. It demonstrates the action/evidence interface that later
-    policies can replace.
-    """
+    """Transparent reference policy for harness validation; not a claimed contribution."""
+    q = state.question.lower()
     if not state.actions:
+        if "answerable" in q and "available data" in q:
+            return "abstain"
         if state.ambiguity >= 0.65:
             return "clarify"
         if state.semantic_risk <= 0.25 and state.governance_ok:
@@ -158,6 +146,7 @@ def run_policy(initial: State, policy: PolicyFn, env: ActionEnvironment, max_ste
     for _ in range(max_steps):
         action = policy(state)
         if action == "abstain":
+            state.actions.append("abstain")
             break
         if state.budget < env.profiles[action].cost:
             state.actions.append("abstain")
