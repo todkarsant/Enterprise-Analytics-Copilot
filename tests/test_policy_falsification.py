@@ -1,31 +1,53 @@
 import inspect
 
-from research.evaluator import evaluate_state
-from research.experiment import ActionEnvironment, p5_post_evidence_cascade, p6_evidence_policy, run_policy
+from research.experiment import ActionEnvironment, State, p0_always_llm, p1_deterministic_only, p2_static_hybrid, p3_query_complexity_router, p4_query_confidence_router, p5_post_evidence_cascade, run_policy
 from research.fixtures import cases
 
 
-def test_policy_does_not_read_evaluator_only_answerable_field():
-    source = inspect.getsource(p6_evidence_policy)
-    assert "state.answerable" not in source
+POLICIES = [
+    p0_always_llm,
+    p1_deterministic_only,
+    p2_static_hybrid,
+    p3_query_complexity_router,
+    p4_query_confidence_router,
+    p5_post_evidence_cascade,
+]
 
 
-def test_controlled_fixture_exposes_heterogeneous_action_advantage():
+def test_baselines_do_not_read_evaluator_only_answerable_field():
+    for policy in POLICIES:
+        assert "state.answerable" not in inspect.getsource(policy)
+
+
+def test_baselines_are_callable_and_terminate():
     env = ActionEnvironment()
-    ambiguous = cases()[3]
-    risky = cases()[2]
-
-    p5_amb = evaluate_state(run_policy(ambiguous, p5_post_evidence_cascade, env))
-    p6_amb = evaluate_state(run_policy(ambiguous, p6_evidence_policy, env))
-    p5_risk = evaluate_state(run_policy(risky, p5_post_evidence_cascade, env))
-    p6_risk = evaluate_state(run_policy(risky, p6_evidence_policy, env))
-
-    assert p6_amb.correct is True
-    assert p6_amb.cost < p5_amb.cost
-    assert p6_risk.correct is True
-    assert p5_risk.correct is False
+    for policy in POLICIES:
+        for case in cases():
+            state = run_policy(case, policy, env)
+            assert state.terminated is True
+            assert len(state.actions) <= 8
 
 
-def test_no_result_is_claimed_as_a_paper_result():
-    source = inspect.getsource(p6_evidence_policy)
-    assert "paper contribution" in source
+def test_p5_is_post_evidence_not_query_only():
+    source = inspect.getsource(p5_post_evidence_cascade)
+    assert "execution_ok" in source
+    assert "semantic_risk" in source
+    assert "ambiguity" in source
+
+
+def test_p5_low_risk_case_stops_without_extra_expensive_action():
+    state = run_policy(cases()[0], p5_post_evidence_cascade, ActionEnvironment())
+    assert state.actions == ["deterministic_execute", "abstain"]
+    assert state.cost <= 0.05
+
+
+def test_no_test_asserts_p6_superiority_before_p6_exists():
+    source = inspect.getsource(inspect.getmodule(inspect.currentframe()))
+    assert "p6_evidence_policy" not in source
+    assert "paper contribution" not in source
+
+
+def test_budget_exhaustion_is_explicit_and_not_correctness():
+    state = State("hard request", semantic_risk=0.9, budget=0.05)
+    result = run_policy(state, p5_post_evidence_cascade, ActionEnvironment())
+    assert result.termination_reason in {"budget_exhausted", "policy_abstain"}
