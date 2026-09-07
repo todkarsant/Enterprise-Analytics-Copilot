@@ -9,18 +9,22 @@ import statistics
 import time
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from app.services.llm import AzureOpenAIProvider, LLMProvider, OllamaProvider
+from research.deterministic_solver import RuleBasedDeterministicSolver
 from research.experiment import State, query_complexity
+from research.spider_official_eval import evaluate_traces
 
 POLICIES = ("P0", "P1", "P2", "P3", "P4", "P5")
+
 
 @dataclass
 class Example:
     question: str
     db_id: str
     gold_sql: str
+
 
 @dataclass
 class Trace:
@@ -31,7 +35,8 @@ class Trace:
     generated_sql: str | None = None
     sql_valid: bool | None = None
     execution_ok: bool | None = None
-    evaluator_correct: bool = False
+    custom_execution_correct: bool = False
+    official_execution_correct: bool | None = None
     latency_ms: float = 0.0
     llm_calls: int = 0
     input_tokens: int = 0
@@ -39,6 +44,7 @@ class Trace:
     cost: float = 0.0
     termination_reason: str = ""
     error: str | None = None
+
 
 class SpiderDataset:
     def __init__(self, question_file: Path, database_dir: Path):
@@ -73,18 +79,23 @@ class SpiderDataset:
             self.database_dir / f"{db_id}.sqlite",
             self.database_dir / f"{db_id}.db",
         ]
-        for p in candidates:
-            if p.exists():
-                return p
+        for path in candidates:
+            if path.exists():
+                return path
         raise FileNotFoundError(f"No SQLite database found for db_id={db_id}")
 
     def schema(self, db_id: str) -> str:
         with sqlite3.connect(self.db_path(db_id)) as con:
-            rows = con.execute("SELECT name, sql FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name").fetchall()
+            rows = con.execute(
+                "SELECT name, sql FROM sqlite_master WHERE type='table' "
+                "AND name NOT LIKE 'sqlite_%' ORDER BY name"
+            ).fetchall()
         return "\n".join(sql for _, sql in rows if sql)
 
-class SpiderEvaluator:
-    """Execution evaluator. Gold SQL is visible only after the system run."""
+
+class SecondaryExecutionEvaluator:
+    """Simple row-set evaluator retained only as a diagnostic secondary metric."""
+
     def __init__(self, dataset: SpiderDataset):
         self.dataset = dataset
 
@@ -114,22 +125,6 @@ class SpiderEvaluator:
         except Exception:
             return False
 
-class DeterministicSolver:
-    """Optional non-LLM baseline supplied as JSONL question->SQL mapping.
-
-    It is intentionally empty unless the user provides a mapping. This prevents
-    accidental leakage from Spider gold SQL into the deterministic baseline.
-    """
-    def __init__(self, path: Path | None):
-        self.mapping: dict[str, str] = {}
-        if path:
-            for line in path.read_text(encoding="utf-8").splitlines():
-                if line.strip():
-                    obj = json.loads(line)
-                    self.mapping[obj["question"]] = obj["sql"]
-
-    def generate(self, question: str) -> str | None:
-        return self.mapping.get(question)
 
 class BenchmarkEnvironment:
     COSTS = {
@@ -143,146 +138,152 @@ class BenchmarkEnvironment:
         "abstain": 0.0,
     }
 
-    def __init__(self, dataset: SpiderDataset, evaluator: SpiderEvaluator, provider: LLMProvider | None, deterministic: DeterministicSolver, max_cost: float = 1.0):
+    def __init__(self, dataset: SpiderDataset, evaluator: SecondaryExecutionEvaluator,
+                 provider: LLMProvider | None, deterministic: RuleBasedDeterministicSolver,
+                 max_cost: float = 1.0):
         self.dataset = dataset
         self.evaluator = evaluator
         self.provider = provider
         self.deterministic = deterministic
         self.max_cost = max_cost
 
-    def _add_cost(self, t: Trace, action: str) -> bool:
-        c = self.COSTS[action]
-        if t.cost + c > self.max_cost:
-            t.termination_reason = "budget_exhausted"
-            t.actions.append("abstain")
+    def _add_cost(self, trace: Trace, action: str) -> bool:
+        cost = self.COSTS[action]
+        if trace.cost + cost > self.max_cost:
+            trace.termination_reason = "budget_exhausted"
+            trace.actions.append("abstain")
             return False
-        t.cost += c
-        t.actions.append(action)
+        trace.cost += cost
+        trace.actions.append(action)
         return True
 
-    def deterministic_sql(self, t: Trace) -> str | None:
-        return self.deterministic.generate(t.question)
+    def deterministic_sql(self, trace: Trace) -> str | None:
+        return self.deterministic.generate(trace.question, trace.db_id)
 
-    def llm_sql(self, t: Trace, schema: str, repair_reason: str | None = None, escalated: bool = False) -> str | None:
+    def llm_sql(self, trace: Trace, schema: str, repair_reason: str | None = None,
+                escalated: bool = False) -> str | None:
         if self.provider is None:
-            t.error = "No LLM provider configured; set LLM_PROVIDER and credentials."
+            trace.error = "No LLM provider configured; set LLM_PROVIDER and credentials."
             return None
         result = self.provider.generate_sql(
-            t.question,
-            schema if not escalated else schema + "\n\nThis is an escalation. Re-check joins, filters, grouping, ordering and nested-query semantics before answering.",
+            trace.question,
+            schema if not escalated else schema +
+            "\n\nThis is an escalation. Re-check joins, filters, grouping, ordering and nested-query semantics before answering.",
             repair_reason=repair_reason,
         )
-        t.llm_calls += 1
-        t.input_tokens += result.input_tokens
-        t.output_tokens += result.output_tokens
+        trace.llm_calls += 1
+        trace.input_tokens += result.input_tokens
+        trace.output_tokens += result.output_tokens
         return result.text
 
-    def execute(self, t: Trace, sql: str) -> bool:
-        ok, err = self.evaluator.execute(t.db_id, sql)
-        t.execution_ok = ok
+    def execute(self, trace: Trace, sql: str) -> bool:
+        ok, err = self.evaluator.execute(trace.db_id, sql)
+        trace.execution_ok = ok
         if not ok:
-            t.error = err
+            trace.error = err
         return ok
 
     def run(self, example: Example, policy: str) -> Trace:
-        t = Trace(example.question, example.db_id, policy)
+        trace = Trace(example.question, example.db_id, policy)
         started = time.perf_counter()
         schema = self.dataset.schema(example.db_id)
         sql: str | None = None
         try:
-            # Every policy gets schema access at the same fixed cost. It is not a
-            # decision point, so it cannot create an unfair advantage.
-            if not self._add_cost(t, "retrieve_schema"):
-                return t
+            if not self._add_cost(trace, "retrieve_schema"):
+                return trace
 
             if policy == "P1":
-                sql = self.deterministic_sql(t)
-                if sql is not None and self._add_cost(t, "deterministic_execute"):
-                    t.generated_sql = sql
-                    t.sql_valid = self.execute(t, sql)
+                sql = self.deterministic_sql(trace)
+                if sql is not None and self._add_cost(trace, "deterministic_execute"):
+                    trace.generated_sql = sql
+                    trace.sql_valid = self.execute(trace, sql)
                 else:
-                    t.sql_valid = False
+                    trace.sql_valid = False
 
             elif policy in ("P0", "P2", "P3", "P4"):
-                use_deterministic = policy == "P2" and query_complexity(State(example.question)) < 0.45
-                if policy == "P3":
+                use_deterministic = False
+                if policy == "P2":
                     use_deterministic = query_complexity(State(example.question)) < 0.45
-                if policy == "P4":
-                    qconf = 1.0 - min(1.0, 0.5 * min(1.0, len(example.question) / 180) + 0.5 * (0.25 if "why" in example.question.lower() else 0.0))
+                elif policy == "P3":
+                    use_deterministic = query_complexity(State(example.question)) < 0.45
+                elif policy == "P4":
+                    qconf = 1.0 - min(
+                        1.0,
+                        0.5 * min(1.0, len(example.question) / 180)
+                        + 0.5 * (0.25 if "why" in example.question.lower() else 0.0),
+                    )
                     use_deterministic = qconf >= 0.75
-                if policy == "P2" and use_deterministic:
-                    sql = self.deterministic_sql(t)
-                    if sql is not None and self._add_cost(t, "deterministic_execute"):
-                        t.generated_sql = sql
-                        t.sql_valid = self.execute(t, sql)
+
+                if policy in ("P2", "P3", "P4") and use_deterministic:
+                    sql = self.deterministic_sql(trace)
+                    if sql is not None and self._add_cost(trace, "deterministic_execute"):
+                        trace.generated_sql = sql
+                        trace.sql_valid = self.execute(trace, sql)
                     else:
-                        t.sql_valid = False
+                        trace.sql_valid = False
                 else:
-                    if not self._add_cost(t, "generate_sql"):
-                        return t
-                    sql = self.llm_sql(t, schema)
-                    t.generated_sql = sql
-                    t.sql_valid = bool(sql)
-                    if sql and self._add_cost(t, "execute_sql"):
-                        self.execute(t, sql)
+                    if not self._add_cost(trace, "generate_sql"):
+                        return trace
+                    sql = self.llm_sql(trace, schema)
+                    trace.generated_sql = sql
+                    trace.sql_valid = bool(sql)
+                    if sql and self._add_cost(trace, "execute_sql"):
+                        self.execute(trace, sql)
 
             elif policy == "P5":
-                # Strong pre-P6 reference: cheap deterministic attempt first;
-                # only the observed result determines escalation.
-                sql = self.deterministic_sql(t)
-                if sql is not None and self._add_cost(t, "deterministic_execute"):
-                    t.generated_sql = sql
-                    t.sql_valid = self.execute(t, sql)
-                    if t.execution_ok:
-                        pass
-                    else:
-                        sql = None
+                # Strong pre-P6 reference: deterministic first, then the observed
+                # execution result determines whether to escalate to the LLM path.
+                sql = self.deterministic_sql(trace)
+                if sql is not None and self._add_cost(trace, "deterministic_execute"):
+                    trace.generated_sql = sql
+                    trace.sql_valid = self.execute(trace, sql)
                 else:
-                    t.sql_valid = False
-                if not t.execution_ok:
-                    if not self._add_cost(t, "generate_sql"):
-                        return t
-                    sql = self.llm_sql(t, schema)
-                    t.generated_sql = sql
-                    t.sql_valid = bool(sql)
-                    if sql and self._add_cost(t, "execute_sql"):
-                        self.execute(t, sql)
-                    if not t.execution_ok and sql:
-                        if self._add_cost(t, "repair_sql"):
-                            repaired = self.llm_sql(t, schema, repair_reason=t.error)
+                    trace.sql_valid = False
+                if not trace.execution_ok:
+                    if not self._add_cost(trace, "generate_sql"):
+                        return trace
+                    sql = self.llm_sql(trace, schema)
+                    trace.generated_sql = sql
+                    trace.sql_valid = bool(sql)
+                    if sql and self._add_cost(trace, "execute_sql"):
+                        self.execute(trace, sql)
+                    if not trace.execution_ok and sql:
+                        if self._add_cost(trace, "repair_sql"):
+                            repaired = self.llm_sql(trace, schema, repair_reason=trace.error)
                             if repaired:
-                                t.generated_sql = repaired
-                                t.sql_valid = True
-                                if self._add_cost(t, "execute_sql"):
-                                    self.execute(t, repaired)
-                if not t.execution_ok and t.generated_sql:
-                    if self._add_cost(t, "verify_sql"):
-                        # Verification is evaluator-independent: static/execution
-                        # evidence only. It never sees gold SQL.
-                        t.sql_valid = t.generated_sql.strip().lower().startswith(("select", "with"))
-
+                                trace.generated_sql = repaired
+                                trace.sql_valid = True
+                                if self._add_cost(trace, "execute_sql"):
+                                    self.execute(trace, repaired)
+                if not trace.execution_ok and trace.generated_sql:
+                    if self._add_cost(trace, "verify_sql"):
+                        trace.sql_valid = trace.generated_sql.strip().lower().startswith(("select", "with"))
             else:
                 raise ValueError(f"Unknown policy {policy}")
 
-            if t.termination_reason == "":
-                t.actions.append("abstain")
-                t.termination_reason = "policy_complete"
+            if not trace.termination_reason:
+                trace.actions.append("abstain")
+                trace.termination_reason = "policy_complete"
         except Exception as exc:
-            t.error = str(exc)
-            if not t.termination_reason:
-                t.termination_reason = "runtime_error"
+            trace.error = str(exc)
+            if not trace.termination_reason:
+                trace.termination_reason = "runtime_error"
         finally:
-            t.latency_ms = (time.perf_counter() - started) * 1000
-            t.evaluator_correct = self.evaluator.correct(example.db_id, t.generated_sql, example.gold_sql)
-        return t
+            trace.latency_ms = (time.perf_counter() - started) * 1000
+            trace.custom_execution_correct = self.evaluator.correct(
+                example.db_id, trace.generated_sql, example.gold_sql
+            )
+        return trace
 
-def summarize(traces: list[Trace], target_reliabilities=(0.90, 0.95, 0.97, 0.99)) -> dict[str, Any]:
+
+def summarize(traces: list[Trace], metric: str = "custom_execution_correct",
+              target_reliabilities=(0.90, 0.95, 0.97, 0.99)) -> dict[str, Any]:
     out: dict[str, Any] = {}
     for policy in POLICIES:
         rows = [t for t in traces if t.policy == policy]
-        correct = sum(t.evaluator_correct for t in rows)
+        values = [bool(getattr(t, metric)) for t in rows]
         n = len(rows)
-        reliability = correct / n if n else 0.0
+        reliability = sum(values) / n if n else 0.0
         costs = [t.cost for t in rows]
         latencies = [t.latency_ms for t in rows]
         out[policy] = {
@@ -297,12 +298,14 @@ def summarize(traces: list[Trace], target_reliabilities=(0.90, 0.95, 0.97, 0.99)
         }
     return out
 
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--questions", type=Path, required=True)
     ap.add_argument("--database-dir", type=Path, required=True)
     ap.add_argument("--output", type=Path, required=True)
-    ap.add_argument("--deterministic-map", type=Path)
+    ap.add_argument("--spider-eval-dir", type=Path)
+    ap.add_argument("--tables-file", type=Path)
     ap.add_argument("--limit", type=int)
     args = ap.parse_args()
 
@@ -313,14 +316,20 @@ def main() -> None:
     if provider_name == "ollama":
         provider = OllamaProvider(os.getenv("OLLAMA_BASE_URL", "http://localhost:11434"), os.getenv("OLLAMA_MODEL", "llama3.2:1b"))
     elif provider_name == "azure_openai":
-        provider = AzureOpenAIProvider(os.getenv("AZURE_OPENAI_ENDPOINT", ""), os.getenv("AZURE_OPENAI_API_KEY", ""), os.getenv("AZURE_OPENAI_API_VERSION", "2024-10-21"), os.getenv("AZURE_OPENAI_DEPLOYMENT", ""))
+        provider = AzureOpenAIProvider(
+            os.getenv("AZURE_OPENAI_ENDPOINT", ""),
+            os.getenv("AZURE_OPENAI_API_KEY", ""),
+            os.getenv("AZURE_OPENAI_API_VERSION", "2024-10-21"),
+            os.getenv("AZURE_OPENAI_DEPLOYMENT", ""),
+        )
 
-    evaluator = SpiderEvaluator(dataset)
-    env = BenchmarkEnvironment(dataset, evaluator, provider, DeterministicSolver(args.deterministic_map))
+    evaluator = SecondaryExecutionEvaluator(dataset)
+    deterministic = RuleBasedDeterministicSolver(args.database_dir)
+    env = BenchmarkEnvironment(dataset, evaluator, provider, deterministic)
     traces: list[Trace] = []
-    for ex in examples:
+    for example in examples:
         for policy in POLICIES:
-            traces.append(env.run(ex, policy))
+            traces.append(env.run(example, policy))
 
     payload = {
         "status": "external_benchmark_run",
@@ -328,14 +337,46 @@ def main() -> None:
         "question_count": len(examples),
         "policies": list(POLICIES),
         "provider": provider_name or "none",
+        "deterministic_baseline": {
+            "type": "schema_aware_rule_based",
+            "gold_mapping": False,
+            "supported_scope": "conservative single-table aggregate/direct/order patterns",
+        },
         "dataset_manifest": dataset.checksum_manifest(),
-        "results": summarize(traces),
+        "secondary_custom_results": summarize(traces, "custom_execution_correct"),
+        "official_spider_execution": None,
         "traces": [asdict(t) for t in traces],
-        "warning": "This artifact is benchmark evidence only for the exact recorded inputs/configuration; do not generalize beyond the evaluated split.",
+        "warning": "Official Spider execution evaluation is primary. The row-set metric is retained only as a secondary diagnostic. Test-suite accuracy is a separate official metric and is not claimed unless its test-suite databases are supplied.",
     }
+
+    if args.spider_eval_dir and args.tables_file:
+        official = evaluate_traces(payload, args.database_dir, args.tables_file, args.spider_eval_dir)
+        payload["official_spider_execution"] = official
+        for policy in POLICIES:
+            values = [
+                bool(t["official_execution_correct"])
+                for t in payload["traces"]
+                if t["policy"] == policy
+            ]
+            n = len(values)
+            reliability = sum(values) / n if n else 0.0
+            payload.setdefault("results", {})[policy] = {
+                "n": n,
+                "execution_correctness": reliability,
+                "coverage": sum(bool(t["generated_sql"]) for t in payload["traces"] if t["policy"] == policy) / n if n else 0.0,
+                "mean_cost": statistics.mean(t["cost"] for t in payload["traces"] if t["policy"] == policy) if n else None,
+                "median_latency_ms": statistics.median(t["latency_ms"] for t in payload["traces"] if t["policy"] == policy) if n else None,
+                "mean_llm_calls": statistics.mean(t["llm_calls"] for t in payload["traces"] if t["policy"] == policy) if n else None,
+                "targets": {str(r): reliability >= r for r in (0.90, 0.95, 0.97, 0.99)},
+            }
+    else:
+        payload["status"] = "benchmark_run_without_official_evaluator"
+        payload["results"] = payload["secondary_custom_results"]
+
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(payload, indent=2), encoding="utf-8")
     print(json.dumps(payload["results"], indent=2))
+
 
 if __name__ == "__main__":
     main()
