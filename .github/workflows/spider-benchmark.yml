@@ -93,8 +93,8 @@ jobs:
           gdown "https://drive.google.com/uc?id=1403EGqzIDoHMdQF4c9Bkyl7dZLZ5Wt6J" -O data/spider_data.zip
           unzip -q data/spider_data.zip -d data/spider_unpacked
           mkdir -p data/spider
-          find data/spider_unpacked -name dev.json -exec cp {} data/spider/dev.json \\;
-          find data/spider_unpacked -name tables.json -exec cp {} data/spider/tables.json \\;
+          find data/spider_unpacked -name dev.json -exec cp {} data/spider/dev.json \;
+          find data/spider_unpacked -name tables.json -exec cp {} data/spider/tables.json \;
           DB_DIR=$(find data/spider_unpacked -type d -name database | head -n 1)
           test -n "$DB_DIR"
           cp -R "$DB_DIR" data/spider/database
