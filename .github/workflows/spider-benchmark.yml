@@ -1,0 +1,156 @@
+name: spider-benchmark-local
+
+# HARD RULE: iterative research runs use local Ollama only.
+# This workflow contains no Azure credentials and cannot launch an Azure-backed run.
+on:
+  workflow_dispatch:
+    inputs:
+      model:
+        description: "Local Ollama model"
+        required: true
+        default: "llama3.2:1b"
+      limit:
+        description: "Optional question limit (blank = full development set)"
+        required: false
+        default: ""
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    env:
+      PYTHONPATH: .
+      LLM_PROVIDER: ollama
+      OLLAMA_BASE_URL: http://127.0.0.1:11434
+      OLLAMA_MODEL: ${{ inputs.model }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install -r requirements.txt
+          python -m pip install gdown
+          python -m nltk.downloader punkt punkt_tab
+
+      - name: Install and start Ollama
+        shell: bash
+        run: |
+          curl -fsSL https://ollama.com/install.sh | sh
+          ollama serve > /tmp/ollama.log 2>&1 &
+          for i in $(seq 1 60); do
+            if curl -fsS "$OLLAMA_BASE_URL/api/tags" >/dev/null 2>&1; then
+              break
+            fi
+            sleep 2
+          done
+          curl -fsS "$OLLAMA_BASE_URL/api/tags" >/dev/null
+          ollama pull "$OLLAMA_MODEL"
+          ollama list
+
+      - name: Download official Spider 1.0 dataset
+        run: |
+          mkdir -p data
+          gdown "https://drive.google.com/uc?id=1403EGqzIDoHMdQF4c9Bkyl7dZLZ5Wt6J" -O data/spider_data.zip
+          unzip -q data/spider_data.zip -d data/spider_unpacked
+          mkdir -p data/spider
+          find data/spider_unpacked -name dev.json -exec cp {} data/spider/dev.json \;
+          find data/spider_unpacked -name tables.json -exec cp {} data/spider/tables.json \;
+          DB_DIR=$(find data/spider_unpacked -type d -name database | head -n 1)
+          test -n "$DB_DIR"
+          cp -R "$DB_DIR" data/spider/database
+          test -s data/spider/dev.json
+          test -s data/spider/tables.json
+          test -d data/spider/database
+
+      - name: Freeze unseen-schema holdout
+        run: |
+          python scripts/validate_spider.py \
+            --root data/spider \
+            --write-unseen data/spider/dev_unseen_schema.json \
+            --unseen-fraction 0.20 \
+            --unseen-seed 1729
+          test -s data/spider/dev_unseen_schema.json
+
+      - name: Fetch pinned official Spider evaluator
+        run: |
+          git clone --quiet https://github.com/taoyds/spider.git external/spider
+          git -C external/spider checkout --quiet b7b5b8c890cd30e35427348bb9eb8c6d1350ca7c
+          test -s external/spider/evaluation.py
+          test -s external/spider/process_sql.py
+          git -C external/spider rev-parse HEAD
+
+      - name: Run research unit tests
+        run: |
+          python -m pytest -q
+
+      - name: Verify local provider before benchmark
+        run: |
+          test "$LLM_PROVIDER" = "ollama"
+          test -n "$OLLAMA_MODEL"
+          curl -fsS "$OLLAMA_BASE_URL/api/tags" >/dev/null
+          python - <<'PY'
+          import os
+          from app.services.llm import OllamaProvider
+          provider = OllamaProvider(os.environ["OLLAMA_BASE_URL"], os.environ["OLLAMA_MODEL"])
+          result = provider.generate_sql(
+              "How many singers do we have?",
+              "CREATE TABLE singer (Singer_ID INTEGER, Name TEXT);",
+          )
+          print(f"Local Ollama smoke test passed with model={result.model}")
+          PY
+
+      - name: Run local P0-P5 benchmark
+        shell: bash
+        run: |
+          mkdir -p artifacts/spider
+          LIMIT_ARGS=()
+          if [ -n "${{ inputs.limit }}" ]; then
+            LIMIT_ARGS+=(--limit "${{ inputs.limit }}")
+          fi
+          python -m research.spider_benchmark \
+            --questions data/spider/dev.json \
+            --database-dir data/spider/database \
+            --spider-eval-dir external/spider \
+            --tables-file data/spider/tables.json \
+            --output artifacts/spider/p0_p5.json \
+            "${LIMIT_ARGS[@]}"
+
+      - name: Analyze local P0-P5 benchmark
+        run: |
+          python scripts/analyze_research_benchmark.py \
+            artifacts/spider/p0_p5.json \
+            --output artifacts/spider/p0_p5_analysis.json
+
+      - name: Run local unseen-schema P0-P5 benchmark
+        shell: bash
+        run: |
+          LIMIT_ARGS=()
+          if [ -n "${{ inputs.limit }}" ]; then
+            LIMIT_ARGS+=(--limit "${{ inputs.limit }}")
+          fi
+          python -m research.spider_benchmark \
+            --questions data/spider/dev_unseen_schema.json \
+            --database-dir data/spider/database \
+            --spider-eval-dir external/spider \
+            --tables-file data/spider/tables.json \
+            --output artifacts/spider/p0_p5_unseen_schema.json \
+            "${LIMIT_ARGS[@]}"
+
+      - name: Analyze local unseen-schema benchmark
+        run: |
+          python scripts/analyze_research_benchmark.py \
+            artifacts/spider/p0_p5_unseen_schema.json \
+            --output artifacts/spider/p0_p5_unseen_schema_analysis.json
+
+      - name: Upload local benchmark evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: spider-p0-p5-local-ollama
+          path: artifacts/spider/
+          retention-days: 14
