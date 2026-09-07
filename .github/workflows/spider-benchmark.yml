@@ -1,18 +1,28 @@
-name: spider-benchmark
+name: spider-benchmark-local
 
-# Expensive benchmark is manual-only. Code/test changes must never trigger
-# Azure-backed Spider runs implicitly.
+# HARD RULE: iterative research runs use local Ollama only.
+# This workflow contains no Azure credentials and cannot launch an Azure-backed run.
 on:
   workflow_dispatch:
+    inputs:
+      model:
+        description: "Local Ollama model"
+        required: true
+        default: "llama3.2:1b"
+      limit:
+        description: "Optional question limit (blank = full development set)"
+        required: false
+        default: ""
 
 jobs:
   benchmark:
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 240
     env:
       PYTHONPATH: .
-      LLM_PROVIDER: azure_openai
-      AZURE_SECRET_ENTERPRISE_ANALYTICS_COPILOT: ${{ secrets.AZURE_SECRET_ENTERPRISE_ANALYTICS_COPILOT }}
+      LLM_PROVIDER: ollama
+      OLLAMA_BASE_URL: http://127.0.0.1:11434
+      OLLAMA_MODEL: ${{ inputs.model }}
     steps:
       - uses: actions/checkout@v4
 
@@ -28,57 +38,20 @@ jobs:
           python -m pip install gdown
           python -m nltk.downloader punkt punkt_tab
 
-      - name: Load bundled Azure benchmark configuration
+      - name: Install and start Ollama
         shell: bash
         run: |
-          python - <<'PY'
-          import json
-          import os
-          from pathlib import Path
-
-          raw = os.environ["AZURE_SECRET_ENTERPRISE_ANALYTICS_COPILOT"].strip()
-          if not raw:
-              raise SystemExit("Bundled Azure secret is empty")
-          values = {}
-          try:
-              parsed = json.loads(raw)
-              if not isinstance(parsed, dict):
-                  raise ValueError("secret JSON must be an object")
-              values = {str(k): str(v) for k, v in parsed.items()}
-          except Exception:
-              for line in raw.splitlines():
-                  line = line.strip()
-                  if not line or line.startswith("#") or "=" not in line:
-                      continue
-                  key, value = line.split("=", 1)
-                  values[key.strip()] = value.strip().strip('"').strip("'")
-
-          aliases = {
-              "AZURE_OPENAI_ENDPOINT": ["AZURE_OPENAI_ENDPOINT", "endpoint", "azure_endpoint"],
-              "AZURE_OPENAI_API_KEY": ["AZURE_OPENAI_API_KEY", "api_key", "key", "azure_api_key"],
-              "AZURE_OPENAI_API_VERSION": ["AZURE_OPENAI_API_VERSION", "api_version", "version"],
-              "AZURE_OPENAI_DEPLOYMENT": ["AZURE_OPENAI_DEPLOYMENT", "deployment", "deployment_name"],
-          }
-          missing = []
-          with Path(os.environ["GITHUB_ENV"]).open("a", encoding="utf-8") as fh:
-              for target, candidates in aliases.items():
-                  value = next((values[c] for c in candidates if values.get(c)), None)
-                  if not value:
-                      missing.append(target)
-                      continue
-                  print(f"::add-mask::{value}")
-                  fh.write(f"{target}<<__AZURE_VALUE__\n{value}\n__AZURE_VALUE__\n")
-          if missing:
-              raise SystemExit("Bundled Azure secret is missing: " + ", ".join(missing))
-          PY
-
-      - name: Verify Azure benchmark configuration
-        run: |
-          test -n "$AZURE_OPENAI_ENDPOINT"
-          test -n "$AZURE_OPENAI_API_KEY"
-          test -n "$AZURE_OPENAI_API_VERSION"
-          test -n "$AZURE_OPENAI_DEPLOYMENT"
-          echo "Azure benchmark configuration present; secret values are not printed."
+          curl -fsSL https://ollama.com/install.sh | sh
+          ollama serve > /tmp/ollama.log 2>&1 &
+          for i in $(seq 1 60); do
+            if curl -fsS "$OLLAMA_BASE_URL/api/tags" >/dev/null 2>&1; then
+              break
+            fi
+            sleep 2
+          done
+          curl -fsS "$OLLAMA_BASE_URL/api/tags" >/dev/null
+          ollama pull "$OLLAMA_MODEL"
+          ollama list
 
       - name: Download official Spider 1.0 dataset
         run: |
@@ -116,40 +89,68 @@ jobs:
         run: |
           python -m pytest -q
 
-      - name: Run corrected P0-P5 benchmark with official Spider execution evaluator
+      - name: Verify local provider before benchmark
+        run: |
+          test "$LLM_PROVIDER" = "ollama"
+          test -n "$OLLAMA_MODEL"
+          curl -fsS "$OLLAMA_BASE_URL/api/tags" >/dev/null
+          python - <<'PY'
+          import os
+          from app.services.llm import OllamaProvider
+          provider = OllamaProvider(os.environ["OLLAMA_BASE_URL"], os.environ["OLLAMA_MODEL"])
+          result = provider.generate_sql(
+              "How many singers do we have?",
+              "CREATE TABLE singer (Singer_ID INTEGER, Name TEXT);",
+          )
+          print(f"Local Ollama smoke test passed with model={result.model}")
+          PY
+
+      - name: Run local P0-P5 benchmark
+        shell: bash
         run: |
           mkdir -p artifacts/spider
+          LIMIT_ARGS=()
+          if [ -n "${{ inputs.limit }}" ]; then
+            LIMIT_ARGS+=(--limit "${{ inputs.limit }}")
+          fi
           python -m research.spider_benchmark \
             --questions data/spider/dev.json \
             --database-dir data/spider/database \
             --spider-eval-dir external/spider \
             --tables-file data/spider/tables.json \
-            --output artifacts/spider/p0_p5.json
+            --output artifacts/spider/p0_p5.json \
+            "${LIMIT_ARGS[@]}"
 
-      - name: Analyze corrected P0-P5 benchmark
+      - name: Analyze local P0-P5 benchmark
         run: |
           python scripts/analyze_research_benchmark.py \
             artifacts/spider/p0_p5.json \
             --output artifacts/spider/p0_p5_analysis.json
 
-      - name: Run unseen-schema P0-P5 benchmark
+      - name: Run local unseen-schema P0-P5 benchmark
+        shell: bash
         run: |
+          LIMIT_ARGS=()
+          if [ -n "${{ inputs.limit }}" ]; then
+            LIMIT_ARGS+=(--limit "${{ inputs.limit }}")
+          fi
           python -m research.spider_benchmark \
             --questions data/spider/dev_unseen_schema.json \
             --database-dir data/spider/database \
             --spider-eval-dir external/spider \
             --tables-file data/spider/tables.json \
-            --output artifacts/spider/p0_p5_unseen_schema.json
+            --output artifacts/spider/p0_p5_unseen_schema.json \
+            "${LIMIT_ARGS[@]}"
 
-      - name: Analyze unseen-schema benchmark
+      - name: Analyze local unseen-schema benchmark
         run: |
           python scripts/analyze_research_benchmark.py \
             artifacts/spider/p0_p5_unseen_schema.json \
             --output artifacts/spider/p0_p5_unseen_schema_analysis.json
 
-      - name: Upload benchmark evidence
+      - name: Upload local benchmark evidence
         uses: actions/upload-artifact@v4
         with:
-          name: spider-p0-p5-benchmark
+          name: spider-p0-p5-local-ollama
           path: artifacts/spider/
           retention-days: 14
