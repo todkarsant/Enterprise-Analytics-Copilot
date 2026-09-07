@@ -121,10 +121,17 @@ class BenchmarkEnvironment:
     @staticmethod
     def needs_post_evidence_escalation(question, sql, row_count):
         q = question.lower(); s = sql.lower()
-        predicate_cues = (" whose ", " with ", " named ", " in ", " from ", " where ", " that ", " for ", " of ")
-        structural_cues = ("each", "every", "group", "average", "maximum", "minimum", "highest", "lowest", "most", "least", "before", "after", "between", "compare", "how many")
-        missing_predicate = any(cue in f" {q} " for cue in predicate_cues) and not any(k in s for k in (" where ", " join ", " group by ", " having "))
+        # Only explicit predicate/condition language is evidence for a missing
+        # predicate. Generic relation words such as "of", "in", "for", and
+        # "from" are intentionally excluded because they create false positives.
+        predicate_patterns = (
+            r"\bwhose\b", r"\bnamed\b", r"\bwhere\b", r"\bwith\s+(?:the\s+)?(?:name|id|number|value)\b",
+            r"\bthat\s+(?:has|have|is|are|contains|contain)\b",
+        )
+        import re
+        missing_predicate = any(re.search(pattern, q) for pattern in predicate_patterns) and not any(k in s for k in (" where ", " join ", " group by ", " having "))
         singleton_risk = row_count is not None and row_count > 1 and any(k in q for k in ("highest", "lowest", "maximum", "minimum", "most", "least", "top"))
+        structural_cues = ("each", "every", "group", "average", "maximum", "minimum", "highest", "lowest", "most", "least", "before", "after", "between", "compare", "how many")
         structural_risk = any(k in q for k in structural_cues) and ("group by" not in s and " join " not in s and " where " not in s and "order by" not in s)
         if missing_predicate: return True, "question_predicate_not_reflected"
         if singleton_risk: return True, "multirow_singleton_request"
