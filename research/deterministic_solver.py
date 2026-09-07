@@ -1,4 +1,4 @@
-from __future__ import annotations
+from __future__
 
 import re
 import sqlite3
@@ -76,10 +76,13 @@ class RuleBasedDeterministicSolver:
             ]
             columns: list[Column] = []
             for table in tables:
-                for name, sql_type in con.execute(
+                # PRAGMA table_info returns cid, name, type, notnull, dflt_value, pk.
+                for row in con.execute(
                     f'PRAGMA table_info("{table.replace(chr(34), chr(34) * 2)}")'
                 ).fetchall():
-                    columns.append(Column(table, name, sql_type or ""))
+                    if len(row) < 3:
+                        raise ValueError(f"Unexpected PRAGMA table_info row for table={table!r}: {row!r}")
+                    columns.append(Column(table, row[1], row[2] or ""))
         return tables, columns
 
     @staticmethod
