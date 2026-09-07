@@ -45,3 +45,22 @@ LLM benchmark
 ```
 
 This policy exists specifically to prevent accidental token consumption while the research implementation is being developed.
+
+## Remote Ollama execution boundary
+
+Remote Ollama execution is permitted for **iterative research workloads** when it runs an Ollama model in a controlled, reproducible environment such as an isolated GitHub Actions runner. Remote execution is considered an execution-environment implementation of the local-Ollama requirement; it is **not** permission to use Azure or another paid LLM provider.
+
+Before remote execution is accepted as research evidence, the environment must record and preserve:
+
+- exact repository commit SHA;
+- exact Ollama/model identity and version where available;
+- Python/runtime and dependency versions;
+- dataset and evaluator provenance/hashes;
+- prompts/configuration and benchmark seed;
+- raw traces and generated analysis artifacts;
+- execution resource/time limits; and
+- enough metadata to reproduce the run independently of the user's laptop.
+
+A remote runner must first pass a **local-vs-remote reproducibility/equivalence check** on a fixed characterization workload. Differences must be investigated and documented before full-scale results are treated as comparable research evidence.
+
+The remote runner must not modify the benchmark, evaluator, policies, metrics, acceptance criteria, or exclusion rules to improve scores. Its purpose is to remove laptop availability as an execution bottleneck while preserving research integrity.
