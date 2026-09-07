@@ -2,7 +2,8 @@ from pathlib import Path
 import json
 import sqlite3
 
-from research.spider_benchmark import DeterministicSolver, SpiderDataset, SpiderEvaluator, summarize
+from research.deterministic_solver import RuleBasedDeterministicSolver
+from research.spider_benchmark import SecondaryExecutionEvaluator, SpiderDataset, summarize
 from research.spider_benchmark import Trace, POLICIES
 
 
@@ -34,26 +35,36 @@ def test_spider_dataset_loads_and_resolves_db(tmp_path):
     assert manifest["database_files"]
 
 
-def test_execution_evaluator_compares_results_after_run(tmp_path):
+def test_secondary_execution_evaluator_compares_results_after_run(tmp_path):
     q, db_root = make_fixture(tmp_path)
     ds = SpiderDataset(q, db_root)
-    ev = SpiderEvaluator(ds)
+    ev = SecondaryExecutionEvaluator(ds)
     assert ev.execute("toy", "SELECT COUNT(*) FROM users")[0] is True
     assert ev.correct("toy", "SELECT COUNT(*) FROM users", "SELECT COUNT(*) FROM users") is True
     assert ev.correct("toy", "SELECT COUNT(*) FROM users WHERE id > 10", "SELECT COUNT(*) FROM users") is False
 
 
-def test_deterministic_solver_has_no_implicit_gold_access(tmp_path):
-    solver = DeterministicSolver(None)
-    assert solver.generate("How many users are there?") is None
+def test_deterministic_solver_is_schema_driven_and_has_no_gold_mapping(tmp_path):
+    q, db_root = make_fixture(tmp_path)
+    solver = RuleBasedDeterministicSolver(db_root)
+    sql = solver.generate("How many users are there?", "toy")
+    assert sql is not None
+    assert "COUNT" in sql.upper()
+    assert sql.lower() == 'select count(*) from "users"'
 
 
 def test_summary_exposes_all_pre_p6_policies():
     traces = [
-        Trace("q", "db", p, generated_sql="SELECT 1", evaluator_correct=(p in {"P0", "P5"}), cost=0.2, latency_ms=10)
+        Trace(
+            "q", "db", p,
+            generated_sql="SELECT 1",
+            official_execution_correct=(p in {"P0", "P5"}),
+            cost=0.2,
+            latency_ms=10,
+        )
         for p in POLICIES
     ]
-    result = summarize(traces)
+    result = summarize(traces, metric="official_execution_correct")
     assert list(result) == list(POLICIES)
     assert result["P5"]["execution_correctness"] == 1.0
     assert result["P1"]["execution_correctness"] == 0.0
