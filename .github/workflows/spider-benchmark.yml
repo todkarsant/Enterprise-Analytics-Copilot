@@ -1,0 +1,115 @@
+name: spider-benchmark
+
+on:
+  push:
+    branches:
+      - "research/p1-spider-adapter"
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      PYTHONPATH: .
+      LLM_PROVIDER: azure_openai
+      AZURE_SECRET_ENTERPRISE_ANALYTICS_COPILOT: ${{ secrets.AZURE_SECRET_ENTERPRISE_ANALYTICS_COPILOT }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install -r requirements.txt
+          python -m pip install gdown
+
+      - name: Load bundled Azure benchmark configuration
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          raw = os.environ["AZURE_SECRET_ENTERPRISE_ANALYTICS_COPILOT"].strip()
+          if not raw:
+              raise SystemExit("AZURE_SECRET_ENTERPRISE_ANALYTICS_COPILOT is empty")
+
+          values = {}
+          try:
+              parsed = json.loads(raw)
+              if not isinstance(parsed, dict):
+                  raise ValueError("secret JSON must be an object")
+              values = {str(k): str(v) for k, v in parsed.items()}
+          except Exception:
+              for line in raw.splitlines():
+                  line = line.strip()
+                  if not line or line.startswith("#") or "=" not in line:
+                      continue
+                  key, value = line.split("=", 1)
+                  values[key.strip()] = value.strip().strip('"').strip("'")
+
+          aliases = {
+              "AZURE_OPENAI_ENDPOINT": ["AZURE_OPENAI_ENDPOINT", "endpoint", "azure_endpoint"],
+              "AZURE_OPENAI_API_KEY": ["AZURE_OPENAI_API_KEY", "api_key", "key", "azure_api_key"],
+              "AZURE_OPENAI_API_VERSION": ["AZURE_OPENAI_API_VERSION", "api_version", "version"],
+              "AZURE_OPENAI_DEPLOYMENT": ["AZURE_OPENAI_DEPLOYMENT", "deployment", "deployment_name"],
+          }
+
+          missing = []
+          with Path(os.environ["GITHUB_ENV"]).open("a", encoding="utf-8") as fh:
+              for target, candidates in aliases.items():
+                  value = next((values[c] for c in candidates if values.get(c)), None)
+                  if not value:
+                      missing.append(target)
+                      continue
+                  fh.write(f"{target}<<__AZURE_VALUE__\n{value}\n__AZURE_VALUE__\n")
+
+          if missing:
+              raise SystemExit("Bundled Azure secret is missing: " + ", ".join(missing))
+          PY
+
+      - name: Verify Azure benchmark configuration
+        run: |
+          test -n "$AZURE_OPENAI_ENDPOINT"
+          test -n "$AZURE_OPENAI_API_KEY"
+          test -n "$AZURE_OPENAI_API_VERSION"
+          test -n "$AZURE_OPENAI_DEPLOYMENT"
+          echo "Azure benchmark configuration loaded successfully."
+
+      - name: Download official Spider 1.0 dataset
+        run: |
+          mkdir -p data
+          gdown "https://drive.google.com/uc?id=1403EGqzIDoHMdQF4c9Bkyl7dZLZ5Wt6J" -O data/spider_data.zip
+          unzip -q data/spider_data.zip -d data/spider_unpacked
+          mkdir -p data/spider
+          find data/spider_unpacked -name dev.json -exec cp {} data/spider/dev.json \;
+          find data/spider_unpacked -name tables.json -exec cp {} data/spider/tables.json \;
+          DB_DIR=$(find data/spider_unpacked -type d -name database | head -n 1)
+          test -n "$DB_DIR"
+          cp -R "$DB_DIR" data/spider/database
+          test -s data/spider/dev.json
+          test -s data/spider/tables.json
+          test -d data/spider/database
+
+      - name: Run P0-P5 benchmark
+        run: |
+          python -m research.spider_benchmark \
+            --questions data/spider/dev.json \
+            --database-dir data/spider/database \
+            --output artifacts/spider/p0_p5.json
+
+      - name: Upload benchmark evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: spider-p0-p5-benchmark
+          path: artifacts/spider/p0_p5.json
+          retention-days: 14
