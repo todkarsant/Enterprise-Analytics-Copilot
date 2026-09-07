@@ -14,3 +14,5 @@ Execution contract:
 8. Stop for human research review; no automatic P6 implementation.
 
 Iterative execution is Ollama-only. The orchestrator contains no paid-provider execution path and performs no research-score tuning.
+
+Preflight hardening recorded on 2026-09-08: the PRQS gate now uses the GitHub Actions ref when the checkout is detached, and initializes the deterministic CSV-backed application fixture before running API tests. These are CI reproducibility fixes only; benchmark/evaluation definitions and research policies are unchanged.
