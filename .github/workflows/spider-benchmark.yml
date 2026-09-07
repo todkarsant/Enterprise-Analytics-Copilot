@@ -3,7 +3,7 @@ name: spider-benchmark
 on:
   push:
     branches:
-      - "research/p1-spider-adapter"
+      - "research/p1-evaluator-hardening"
   pull_request:
     branches:
       - main
@@ -41,7 +41,7 @@ jobs:
 
           raw = os.environ["AZURE_SECRET_ENTERPRISE_ANALYTICS_COPILOT"].strip()
           if not raw:
-              raise SystemExit("AZURE_SECRET_ENTERPRISE_ANALYTICS_COPILOT is empty")
+              raise SystemExit("Bundled Azure secret is empty")
 
           values = {}
           try:
@@ -71,6 +71,8 @@ jobs:
                   if not value:
                       missing.append(target)
                       continue
+                  # Explicitly mask parsed secret values before exporting them.
+                  print(f"::add-mask::{value}")
                   fh.write(f"{target}<<__AZURE_VALUE__\n{value}\n__AZURE_VALUE__\n")
 
           if missing:
@@ -83,7 +85,7 @@ jobs:
           test -n "$AZURE_OPENAI_API_KEY"
           test -n "$AZURE_OPENAI_API_VERSION"
           test -n "$AZURE_OPENAI_DEPLOYMENT"
-          echo "Azure benchmark configuration loaded successfully."
+          echo "Azure benchmark configuration present; secret values are not printed."
 
       - name: Download official Spider 1.0 dataset
         run: |
@@ -100,11 +102,25 @@ jobs:
           test -s data/spider/tables.json
           test -d data/spider/database
 
-      - name: Run P0-P5 benchmark
+      - name: Fetch pinned official Spider evaluator
+        run: |
+          git clone --quiet https://github.com/taoyds/spider.git external/spider
+          git -C external/spider checkout --quiet b7b5b8c890cd30e35427348bb9eb8c6d1350ca7c
+          test -s external/spider/evaluation.py
+          test -s external/spider/process_sql.py
+          git -C external/spider rev-parse HEAD
+
+      - name: Run research unit tests
+        run: |
+          python -m pytest -q tests/test_research_harness.py tests/test_policy_falsification.py
+
+      - name: Run P0-P5 benchmark with official Spider execution evaluator
         run: |
           python -m research.spider_benchmark \
             --questions data/spider/dev.json \
             --database-dir data/spider/database \
+            --spider-eval-dir external/spider \
+            --tables-file data/spider/tables.json \
             --output artifacts/spider/p0_p5.json
 
       - name: Upload benchmark evidence
