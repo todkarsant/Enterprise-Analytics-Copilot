@@ -1,10 +1,9 @@
 name: P1 Research Orchestrator
 
-# This workflow is intentionally opt-in for expensive execution.
-# A commit containing [launch-research-orchestrator] starts one complete,
-# unattended local-Ollama research cycle. Normal pushes do not launch it.
-# The workflow stops at the P5 research gate; it never implements P6 or makes
-# publication claims automatically.
+# One launch performs the complete unattended local-Ollama cycle.
+# Normal pushes are ignored unless the commit message contains the launch marker.
+# Benchmark execution is chunked so the full Spider dev set can finish within
+# GitHub-hosted job limits. The workflow stops at the P5 research gate.
 
 on:
   push:
@@ -17,7 +16,7 @@ on:
         required: true
         default: "llama3.2:1b"
       run_limit:
-        description: "Optional case limit for controlled characterization; blank = full development set"
+        description: "Optional per-run case limit for controlled characterization; blank = full set"
         required: false
         default: ""
 
@@ -34,37 +33,57 @@ env:
   UNSEEN_FRACTION: "0.20"
   UNSEEN_SEED: "1729"
   SPIDER_EVALUATOR_COMMIT: b7b5b8c890cd30e35427348bb9eb8c6d1350ca7c
+  CHUNK_SIZE: "180"
+  CHUNK_COUNT: "6"
 
 jobs:
-  research-cycle:
+  preflight:
     if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[launch-research-orchestrator]')
     runs-on: ubuntu-latest
-    timeout-minutes: 360
+    timeout-minutes: 20
     permissions:
       contents: read
-      actions: read
     steps:
-      - name: Checkout exact research ref
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           ref: ${{ github.sha }}
           fetch-depth: 0
-
-      - name: Confirm immutable execution contract
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install test dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Confirm immutable research contract
         shell: bash
         run: |
           set -euo pipefail
-          echo "commit=$(git rev-parse HEAD)"
-          echo "branch=${GITHUB_REF_NAME}"
           test "${GITHUB_REF_NAME}" = "research/p1-evaluator-hardening"
           test "${LLM_PROVIDER}" = "ollama"
           test -n "${OLLAMA_MODEL}"
           test -z "${AZURE_OPENAI_API_KEY:-}"
           test -z "${AZURE_API_KEY:-}"
           test -z "${OPENAI_API_KEY:-}"
+      - name: PRQS-1 preflight gate
+        run: python scripts/prqs_gate.py
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+  benchmark:
+    needs: preflight
+    strategy:
+      fail-fast: false
+      matrix:
+        chunk: [0, 1, 2, 3, 4, 5]
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
           cache: pip
@@ -89,9 +108,6 @@ jobs:
           ollama pull "$OLLAMA_MODEL"
           ollama list
 
-      - name: PRQS-1 preflight gate
-        run: python scripts/prqs_gate.py
-
       - name: Download official Spider 1.0 dataset
         shell: bash
         run: |
@@ -107,7 +123,6 @@ jobs:
           cp -R "$DB_DIR" data/spider/database
           test -s data/spider/dev.json
           test -s data/spider/tables.json
-          test -d data/spider/database
 
       - name: Freeze unseen-schema holdout
         run: |
@@ -117,162 +132,190 @@ jobs:
             --unseen-fraction "$UNSEEN_FRACTION" \
             --unseen-seed "$UNSEEN_SEED"
 
+      - name: Slice deterministic benchmark chunk
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          chunk = int(os.environ["CHUNK_INDEX"])
+          size = int(os.environ["CHUNK_SIZE"])
+          limit = os.environ.get("RUN_LIMIT")
+          for source, target in [
+              (Path("data/spider/dev.json"), Path("data/spider/dev_chunk.json")),
+              (Path("data/spider/dev_unseen_schema.json"), Path("data/spider/unseen_chunk.json")),
+          ]:
+              rows = json.loads(source.read_text(encoding="utf-8"))
+              if limit:
+                  rows = rows[: int(limit)]
+              start, end = chunk * size, min((chunk + 1) * size, len(rows))
+              target.write_text(json.dumps(rows[start:end], indent=2) + "\n", encoding="utf-8")
+              print(source, len(rows), "->", target, start, end, "count", end - start)
+          PY
+        env:
+          CHUNK_INDEX: ${{ matrix.chunk }}
+
       - name: Fetch pinned official Spider evaluator
         shell: bash
         run: |
           git clone --quiet https://github.com/taoyds/spider.git external/spider
           git -C external/spider checkout --quiet "$SPIDER_EVALUATOR_COMMIT"
-          test -s external/spider/evaluation.py
-          test -s external/spider/process_sql.py
           test "$(git -C external/spider rev-parse HEAD)" = "$SPIDER_EVALUATOR_COMMIT"
 
-      - name: Create research provenance manifest
+      - name: Create chunk provenance manifest
         shell: bash
         run: |
-          set -euo pipefail
           mkdir -p artifacts/spider
           python - <<'PY'
           import hashlib, json, os, platform, subprocess, sys
           from pathlib import Path
-
-          def sha256(path):
-              h = hashlib.sha256()
-              with open(path, "rb") as f:
-                  for chunk in iter(lambda: f.read(1024 * 1024), b""):
-                      h.update(chunk)
-              return h.hexdigest()
-
-          def cmd(*args):
-              return subprocess.check_output(args, text=True).strip()
-
-          manifest = {
-              "schema_version": "PRQS-1",
-              "git_commit": cmd("git", "rev-parse", "HEAD"),
-              "git_branch": os.environ.get("GITHUB_REF_NAME"),
-              "python": sys.version,
-              "platform": platform.platform(),
-              "model": os.environ["OLLAMA_MODEL"],
-              "provider": os.environ["LLM_PROVIDER"],
-              "ollama_version": cmd("ollama", "--version"),
-              "spider_evaluator_commit": os.environ["SPIDER_EVALUATOR_COMMIT"],
-              "spider_dev_sha256": sha256("data/spider/dev.json"),
-              "spider_tables_sha256": sha256("data/spider/tables.json"),
-              "unseen_holdout_sha256": sha256("data/spider/dev_unseen_schema.json"),
-              "unseen_seed": int(os.environ["UNSEEN_SEED"]),
-              "unseen_fraction": float(os.environ["UNSEEN_FRACTION"]),
-              "run_limit": os.environ.get("RUN_LIMIT") or None,
-              "github_run_id": os.environ.get("GITHUB_RUN_ID"),
-              "github_run_attempt": os.environ.get("GITHUB_RUN_ATTEMPT"),
+          def sha(path):
+              h=hashlib.sha256(); h.update(Path(path).read_bytes()); return h.hexdigest()
+          manifest={
+              "schema_version":"PRQS-1",
+              "git_commit":subprocess.check_output(["git","rev-parse","HEAD"],text=True).strip(),
+              "chunk":int(os.environ["CHUNK_INDEX"]),
+              "chunk_size":int(os.environ["CHUNK_SIZE"]),
+              "model":os.environ["OLLAMA_MODEL"],
+              "provider":os.environ["LLM_PROVIDER"],
+              "python":sys.version,
+              "platform":platform.platform(),
+              "ollama_version":subprocess.check_output(["ollama","--version"],text=True).strip(),
+              "spider_evaluator_commit":os.environ["SPIDER_EVALUATOR_COMMIT"],
+              "dev_chunk_sha256":sha("data/spider/dev_chunk.json"),
+              "unseen_chunk_sha256":sha("data/spider/unseen_chunk.json"),
+              "unseen_seed":int(os.environ["UNSEEN_SEED"]),
+              "unseen_fraction":float(os.environ["UNSEEN_FRACTION"]),
           }
-          Path("artifacts/spider/research_manifest.json").write_text(
-              json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"
-          )
-          print(json.dumps(manifest, indent=2, sort_keys=True))
+          Path("artifacts/spider/manifest.json").write_text(json.dumps(manifest,indent=2)+"\n")
+          print(json.dumps(manifest,indent=2))
           PY
+        env:
+          CHUNK_INDEX: ${{ matrix.chunk }}
 
-      - name: Local provider smoke test
+      - name: Verify local provider
         shell: bash
         run: |
-          set -euo pipefail
           test "$LLM_PROVIDER" = "ollama"
-          curl -fsS "$OLLAMA_BASE_URL/api/tags" >/dev/null
+          test -z "${AZURE_OPENAI_API_KEY:-}"
+          test -z "${AZURE_API_KEY:-}"
+          test -z "${OPENAI_API_KEY:-}"
           python - <<'PY'
           import os
           from app.services.llm import OllamaProvider
-          provider = OllamaProvider(os.environ["OLLAMA_BASE_URL"], os.environ["OLLAMA_MODEL"])
-          result = provider.generate_sql(
-              "How many singers do we have?",
-              "CREATE TABLE singer (Singer_ID INTEGER, Name TEXT);",
-          )
-          print(f"Local Ollama smoke test passed: model={result.model}")
+          provider=OllamaProvider(os.environ["OLLAMA_BASE_URL"],os.environ["OLLAMA_MODEL"])
+          result=provider.generate_sql("How many singers do we have?","CREATE TABLE singer (Singer_ID INTEGER, Name TEXT);")
+          print(f"Local Ollama smoke test passed: {result.model}")
           PY
 
-      - name: Run full P0-P5 development benchmark
+      - name: Run P0-P5 development chunk
         shell: bash
         run: |
-          set -euo pipefail
           args=(
-            --questions data/spider/dev.json
+            --questions data/spider/dev_chunk.json
             --database-dir data/spider/database
             --spider-eval-dir external/spider
             --tables-file data/spider/tables.json
-            --output artifacts/spider/p0_p5.json
+            --output artifacts/spider/p0_p5_dev.json
           )
-          if [ -n "$RUN_LIMIT" ]; then args+=(--limit "$RUN_LIMIT"); fi
           python -m research.spider_benchmark "${args[@]}"
 
-      - name: Analyze development benchmark
+      - name: Run P0-P5 unseen-schema chunk
+        shell: bash
         run: |
-          python scripts/analyze_research_benchmark.py \
-            artifacts/spider/p0_p5.json \
-            --output artifacts/spider/p0_p5_analysis.json
+          args=(
+            --questions data/spider/unseen_chunk.json
+            --database-dir data/spider/database
+            --spider-eval-dir external/spider
+            --tables-file data/spider/tables.json
+            --output artifacts/spider/p0_p5_unseen.json
+          )
+          python -m research.spider_benchmark "${args[@]}"
 
+      - name: Upload benchmark chunk
+        uses: actions/upload-artifact@v4
+        with:
+          name: p1-spider-chunk-${{ matrix.chunk }}
+          path: artifacts/spider/
+          retention-days: 30
+
+  aggregate:
+    needs: benchmark
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install analysis dependencies
+        run: |
+          python -m pip install -r requirements.txt
+          python -m pip install gdown nltk
+          python -m nltk.downloader punkt punkt_tab
+      - name: Download all benchmark chunks
+        uses: actions/download-artifact@v4
+        with:
+          pattern: p1-spider-chunk-*
+          path: artifacts/chunks
+          merge-multiple: false
+      - name: Download official Spider data
+        shell: bash
+        run: |
+          mkdir -p data
+          gdown "https://drive.google.com/uc?id=1403EGqzIDoHMdQF4c9Bkyl7dZLZ5Wt6J" -O data/spider_data.zip
+          unzip -q data/spider_data.zip -d data/spider_unpacked
+          mkdir -p data/spider
+          find data/spider_unpacked -name tables.json -exec cp {} data/spider/tables.json \;
+          DB_DIR=$(find data/spider_unpacked -type d -name database | head -n 1)
+          cp -R "$DB_DIR" data/spider/database
+          python scripts/validate_spider.py --root data/spider --write-unseen data/spider/dev_unseen_schema.json --unseen-fraction "$UNSEEN_FRACTION" --unseen-seed "$UNSEEN_SEED"
+          git clone --quiet https://github.com/taoyds/spider.git external/spider
+          git -C external/spider checkout --quiet "$SPIDER_EVALUATOR_COMMIT"
+      - name: Merge development traces
+        run: |
+          mkdir -p artifacts/final
+          python scripts/merge_spider_benchmark_chunks.py --input-root artifacts/chunks --pattern p0_p5_dev.json --output artifacts/final/p0_p5.json
+      - name: Merge unseen-schema traces
+        run: |
+          python scripts/merge_spider_benchmark_chunks.py --input-root artifacts/chunks --pattern p0_p5_unseen.json --output artifacts/final/p0_p5_unseen_schema.json
+      - name: Analyze development benchmark
+        run: python scripts/analyze_research_benchmark.py artifacts/final/p0_p5.json --output artifacts/final/p0_p5_analysis.json
+      - name: Analyze unseen-schema benchmark
+        run: python scripts/analyze_research_benchmark.py artifacts/final/p0_p5_unseen_schema.json --output artifacts/final/p0_p5_unseen_schema_analysis.json
       - name: Development evaluator forensics
         run: |
-          python -m research.spider_evaluator_forensics \
-            --payload artifacts/spider/p0_p5.json \
-            --database-dir data/spider/database \
-            --tables-file data/spider/tables.json \
-            --spider-eval-dir external/spider \
-            --output artifacts/spider/p0_p5_evaluator_forensics.json
-
-      - name: Run full unseen-schema P0-P5 benchmark
-        shell: bash
-        run: |
-          set -euo pipefail
-          args=(
-            --questions data/spider/dev_unseen_schema.json
-            --database-dir data/spider/database
-            --spider-eval-dir external/spider
-            --tables-file data/spider/tables.json
-            --output artifacts/spider/p0_p5_unseen_schema.json
-          )
-          if [ -n "$RUN_LIMIT" ]; then args+=(--limit "$RUN_LIMIT"); fi
-          python -m research.spider_benchmark "${args[@]}"
-
-      - name: Analyze unseen-schema benchmark
-        run: |
-          python scripts/analyze_research_benchmark.py \
-            artifacts/spider/p0_p5_unseen_schema.json \
-            --output artifacts/spider/p0_p5_unseen_schema_analysis.json
-
+          python -m research.spider_evaluator_forensics --payload artifacts/final/p0_p5.json --database-dir data/spider/database --tables-file data/spider/tables.json --spider-eval-dir external/spider --output artifacts/final/p0_p5_evaluator_forensics.json
       - name: Unseen-schema evaluator forensics
         run: |
-          python -m research.spider_evaluator_forensics \
-            --payload artifacts/spider/p0_p5_unseen_schema.json \
-            --database-dir data/spider/database \
-            --tables-file data/spider/tables.json \
-            --spider-eval-dir external/spider \
-            --output artifacts/spider/p0_p5_unseen_schema_evaluator_forensics.json
-
-      - name: Evaluate P5 research gate
+          python -m research.spider_evaluator_forensics --payload artifacts/final/p0_p5_unseen_schema.json --database-dir data/spider/database --tables-file data/spider/tables.json --spider-eval-dir external/spider --output artifacts/final/p0_p5_unseen_schema_forensics.json
+      - name: Create P5 research gate
         shell: bash
         run: |
           python - <<'PY'
           import json
           from pathlib import Path
-
-          main = json.loads(Path("artifacts/spider/p0_p5_analysis.json").read_text())
-          unseen = json.loads(Path("artifacts/spider/p0_p5_unseen_schema_analysis.json").read_text())
-          report = {
-              "status": "P5_GATE_PENDING_HUMAN_REVIEW",
-              "primary_rule": "Do not implement P6 unless P5 shows a defensible improvement at matched reliability/cost/latency criteria.",
-              "development_analysis": main,
-              "unseen_schema_analysis": unseen,
-              "automated_decision": "STOP_AT_P5",
-              "note": "Automation reports evidence only; it does not declare a research contribution or authorize P6."
+          main=json.loads(Path("artifacts/final/p0_p5_analysis.json").read_text())
+          unseen=json.loads(Path("artifacts/final/p0_p5_unseen_schema_analysis.json").read_text())
+          report={
+              "status":"P5_GATE_PENDING_HUMAN_REVIEW",
+              "automated_decision":"STOP_AT_P5",
+              "primary_rule":"Do not implement P6 unless P5 shows a defensible improvement at matched reliability/cost/latency criteria.",
+              "development_analysis":main,
+              "unseen_schema_analysis":unseen,
+              "note":"Automation reports evidence only; it does not declare a research contribution or authorize P6."
           }
-          Path("artifacts/spider/p5_research_gate.json").write_text(
-              json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8"
-          )
+          Path("artifacts/final/p5_research_gate.json").write_text(json.dumps(report,indent=2)+"\n")
           print("P5 RESEARCH GATE: STOP")
-          print("Evidence artifacts have been produced. P6 implementation requires human research review.")
           PY
-
-      - name: Upload complete research-cycle evidence
-        if: always()
+      - name: Upload complete research evidence
         uses: actions/upload-artifact@v4
         with:
           name: p1-research-cycle-${{ github.run_id }}
-          path: artifacts/spider/
+          path: artifacts/final/
           retention-days: 30
