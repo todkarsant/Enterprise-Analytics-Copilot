@@ -103,7 +103,7 @@ jobs:
 
       - name: Run research unit tests
         run: |
-          python -m pytest -q
+          python -m pytest -q tests
 
       - name: Verify local provider before benchmark
         run: |
