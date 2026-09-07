@@ -1,4 +1,4 @@
-from __future__
+from __future__ import annotations
 
 import re
 import sqlite3
@@ -15,7 +15,7 @@ _STOPWORDS = {
     "show", "list", "give", "find", "tell", "me", "please", "name", "names",
     "number", "count", "average", "avg", "maximum", "minimum", "max", "min", "sum",
     "total", "most", "least", "highest", "lowest", "largest", "smallest", "top",
-    "bottom", "records", "record", "information", "information", "value", "values",
+    "bottom", "records", "record", "information", "value", "values",
 }
 
 
