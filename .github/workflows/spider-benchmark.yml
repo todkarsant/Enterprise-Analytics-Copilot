@@ -1,12 +1,8 @@
 name: spider-benchmark
 
+# Expensive benchmark is manual-only. Code/test changes must never trigger
+# Azure-backed Spider runs implicitly.
 on:
-  push:
-    branches:
-      - "research/p1-evaluator-hardening"
-  pull_request:
-    branches:
-      - main
   workflow_dispatch:
 
 jobs:
@@ -43,7 +39,6 @@ jobs:
           raw = os.environ["AZURE_SECRET_ENTERPRISE_ANALYTICS_COPILOT"].strip()
           if not raw:
               raise SystemExit("Bundled Azure secret is empty")
-
           values = {}
           try:
               parsed = json.loads(raw)
@@ -64,7 +59,6 @@ jobs:
               "AZURE_OPENAI_API_VERSION": ["AZURE_OPENAI_API_VERSION", "api_version", "version"],
               "AZURE_OPENAI_DEPLOYMENT": ["AZURE_OPENAI_DEPLOYMENT", "deployment", "deployment_name"],
           }
-
           missing = []
           with Path(os.environ["GITHUB_ENV"]).open("a", encoding="utf-8") as fh:
               for target, candidates in aliases.items():
@@ -74,7 +68,6 @@ jobs:
                       continue
                   print(f"::add-mask::{value}")
                   fh.write(f"{target}<<__AZURE_VALUE__\n{value}\n__AZURE_VALUE__\n")
-
           if missing:
               raise SystemExit("Bundled Azure secret is missing: " + ", ".join(missing))
           PY
@@ -121,7 +114,7 @@ jobs:
 
       - name: Run research unit tests
         run: |
-          python -m pytest -q tests/test_research_harness.py tests/test_policy_falsification.py tests/test_spider_benchmark.py
+          python -m pytest -q
 
       - name: Run corrected P0-P5 benchmark with official Spider execution evaluator
         run: |
