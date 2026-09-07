@@ -23,6 +23,7 @@ REQUIRED_FILES = [
 ]
 
 FORBIDDEN_ENV = ("AZURE_OPENAI_API_KEY", "AZURE_API_KEY", "OPENAI_API_KEY")
+EXPECTED_RESEARCH_BRANCH = "research/p1-evaluator-hardening"
 
 
 def run(cmd: list[str]) -> str:
@@ -30,6 +31,20 @@ def run(cmd: list[str]) -> str:
     if result.returncode:
         raise RuntimeError(f"command failed: {' '.join(cmd)}\n{result.stdout}\n{result.stderr}")
     return result.stdout.strip()
+
+
+def current_research_ref() -> str:
+    """Resolve the Actions ref before falling back to the local Git branch.
+
+    GitHub Actions checks out an exact commit by default, which leaves the
+    working tree in detached-HEAD state. In that environment
+    ``git branch --show-current`` is intentionally empty, so the authoritative
+    branch identity is the Actions-provided GITHUB_REF_NAME.
+    """
+    ref_name = os.environ.get("GITHUB_REF_NAME", "").strip()
+    if ref_name:
+        return ref_name
+    return run(["git", "branch", "--show-current"])
 
 
 def main() -> int:
@@ -55,8 +70,8 @@ def main() -> int:
         failures.append("orchestrator does not hard-code local Ollama provider")
 
     try:
-        branch = run(["git", "branch", "--show-current"])
-        if branch != "research/p1-evaluator-hardening":
+        branch = current_research_ref()
+        if branch != EXPECTED_RESEARCH_BRANCH:
             failures.append(f"unexpected research branch: {branch}")
     except RuntimeError as exc:
         failures.append(str(exc))
