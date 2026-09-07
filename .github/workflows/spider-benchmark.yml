@@ -101,6 +101,11 @@ jobs:
           test -s external/spider/process_sql.py
           git -C external/spider rev-parse HEAD
 
+      - name: Initialize repository demo database
+        run: |
+          python scripts/init_db.py
+          test -s data/analytics.db
+
       - name: Run research unit tests
         run: |
           python -m pytest -q tests
