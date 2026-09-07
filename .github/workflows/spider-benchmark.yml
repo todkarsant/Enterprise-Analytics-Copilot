@@ -5,6 +5,10 @@ name: spider-benchmark-local
 on:
   workflow_dispatch:
     inputs:
+      code_ref:
+        description: "Research code branch or commit to benchmark"
+        required: true
+        default: "research/p1-evaluator-hardening"
       model:
         description: "Local Ollama model"
         required: true
@@ -25,6 +29,15 @@ jobs:
       OLLAMA_MODEL: ${{ inputs.model }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.code_ref }}
+
+      - name: Confirm benchmark code ref
+        run: |
+          echo "Benchmark code ref: ${{ inputs.code_ref }}"
+          git rev-parse HEAD
+          test -f scripts/validate_spider.py
+          test -f research/spider_benchmark.py
 
       - name: Set up Python
         uses: actions/setup-python@v5
