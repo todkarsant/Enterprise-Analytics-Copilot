@@ -28,8 +28,12 @@ class OfficialSpiderExecutionEvaluator:
     def __init__(self, spider_eval_dir: Path, tables_file: Path):
         self.spider_eval_dir = Path(spider_eval_dir)
         self.tables_file = Path(tables_file)
-        self.evaluation = _load_module("official_spider_evaluation", self.spider_eval_dir / "evaluation.py")
-        self.process_sql = _load_module("official_spider_process_sql", self.spider_eval_dir / "process_sql.py")
+        sys.path.insert(0, str(self.spider_eval_dir))
+        try:
+            self.process_sql = _load_module("process_sql", self.spider_eval_dir / "process_sql.py")
+            self.evaluation = _load_module("official_spider_evaluation", self.spider_eval_dir / "evaluation.py")
+        finally:
+            sys.path.pop(0)
         self.kmaps = self.evaluation.build_foreign_key_map_from_json(str(self.tables_file))
 
     def correct(self, db_path: Path, db_id: str, predicted_sql: str | None, gold_sql: str) -> bool:
