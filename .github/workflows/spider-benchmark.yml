@@ -144,6 +144,15 @@ jobs:
             artifacts/spider/p0_p5.json \
             --output artifacts/spider/p0_p5_analysis.json
 
+      - name: Forensic evaluator diagnostics
+        run: |
+          python -m research.spider_evaluator_forensics \
+            --payload artifacts/spider/p0_p5.json \
+            --database-dir data/spider/database \
+            --tables-file data/spider/tables.json \
+            --spider-eval-dir external/spider \
+            --output artifacts/spider/p0_p5_evaluator_forensics.json
+
       - name: Run local unseen-schema P0-P5 benchmark
         shell: bash
         run: |
@@ -160,6 +169,15 @@ jobs:
           python scripts/analyze_research_benchmark.py \
             artifacts/spider/p0_p5_unseen_schema.json \
             --output artifacts/spider/p0_p5_unseen_schema_analysis.json
+
+      - name: Forensic unseen-schema evaluator diagnostics
+        run: |
+          python -m research.spider_evaluator_forensics \
+            --payload artifacts/spider/p0_p5_unseen_schema.json \
+            --database-dir data/spider/database \
+            --tables-file data/spider/tables.json \
+            --spider-eval-dir external/spider \
+            --output artifacts/spider/p0_p5_unseen_schema_evaluator_forensics.json
 
       - name: Upload local benchmark evidence
         uses: actions/upload-artifact@v4
