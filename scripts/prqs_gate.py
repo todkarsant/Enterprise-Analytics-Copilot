@@ -77,6 +77,11 @@ def main() -> int:
         failures.append(str(exc))
 
     try:
+        run([sys.executable, "scripts/init_db.py"])
+    except RuntimeError as exc:
+        failures.append(f"research test fixture initialization failed: {exc}")
+
+    try:
         run([sys.executable, "-m", "pytest", "-q", "tests"])
     except RuntimeError as exc:
         failures.append(f"research unit tests failed: {exc}")
@@ -91,6 +96,7 @@ def main() -> int:
     print("- methodology/evaluator infrastructure present")
     print("- iterative provider locked to Ollama")
     print("- no paid-provider credential exposed to the job")
+    print("- research test fixture initialized")
     print("- research unit tests pass")
     print("- gate does not alter benchmark/evaluation logic")
     return 0
