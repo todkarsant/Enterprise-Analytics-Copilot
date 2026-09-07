@@ -4,7 +4,7 @@ import argparse
 import json
 import math
 import random
-from collections import Counter, defaultdict
+from collections import Counter
 from pathlib import Path
 
 TARGETS = (0.90, 0.95, 0.97, 0.99)
@@ -160,6 +160,23 @@ def p5_characterization(rows: list[dict]) -> dict:
     return result
 
 
+def p6_gate(policy_summary: dict, paired: dict, unseen_present: bool) -> dict:
+    reasons = []
+    if not unseen_present:
+        reasons.append("unseen-schema evaluation is absent")
+    if not any(policy_summary[p]["official_execution_accuracy"] >= TARGETS[0] for p in POLICIES):
+        reasons.append("no P0-P5 policy reaches the 0.90 reliability target")
+    p5_vs_p0 = paired.get("P0_vs_P5", {})
+    if p5_vs_p0.get("accuracy_delta_b_minus_a", 0.0) < 0:
+        reasons.append("P5 currently regresses against P0 on paired official execution accuracy")
+    if reasons:
+        return {"status": "BLOCKED", "reasons": reasons}
+    return {
+        "status": "READY_FOR_P6_REVIEW",
+        "reasons": ["P0-P5 characterization clears the basic reliability gate; P6 still requires prospective falsification against P5 and unseen-schema/ablation tests."],
+    }
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("artifact", type=Path)
@@ -173,6 +190,7 @@ def main() -> None:
     policy_summary = {p: summarize_policy(traces, p) for p in POLICIES}
     paired = {f"P0_vs_{p}": paired_analysis(traces, "P0", p) for p in POLICIES if p != "P0"}
     failures = {p: failure_taxonomy(traces, p) for p in POLICIES}
+    unseen_present = bool(payload.get("benchmark", "")) and "unseen" in str(payload.get("artifact_label", "")).lower()
     report = {
         "benchmark": payload.get("benchmark"),
         "question_count": payload.get("question_count"),
@@ -187,7 +205,7 @@ def main() -> None:
             "token_accounting": "provider-reported input/output tokens",
             "usd_cost": "must be calculated from the exact Azure model/deployment pricing applicable to the run; do not infer from action units",
         },
-        "p6_gate": "BLOCKED until P0-P5 corrected results, paired statistics, cost/token accounting, P5 characterization, and unseen-schema evaluation are complete.",
+        "p6_gate": p6_gate(policy_summary, paired, unseen_present),
     }
     text = json.dumps(report, indent=2, default=lambda x: dict(x))
     if args.output:
@@ -195,5 +213,4 @@ def main() -> None:
     print(text)
 
 
-if __name__ == "__main__":
-    main()
+if __name__ == "__main__": main()
