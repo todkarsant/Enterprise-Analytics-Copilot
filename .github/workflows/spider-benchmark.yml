@@ -35,7 +35,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install -r requirements.txt
-          python -m pip install gdown
+          python -m pip install gdown nltk
           python -m nltk.downloader punkt punkt_tab
 
       - name: Install and start Ollama
