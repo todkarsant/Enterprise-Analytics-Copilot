@@ -2,7 +2,12 @@ name: spider-benchmark-local
 
 # HARD RULE: iterative research runs use local Ollama only.
 # This workflow contains no Azure credentials and cannot launch an Azure-backed run.
+# Automatic pushes run only the 20-case smoke/characterization benchmark.
+# Full development-set runs remain deliberate local-Ollama executions.
 on:
+  push:
+    branches:
+      - research/p1-evaluator-hardening
   workflow_dispatch:
     inputs:
       model:
@@ -22,9 +27,20 @@ jobs:
       PYTHONPATH: .
       LLM_PROVIDER: ollama
       OLLAMA_BASE_URL: http://127.0.0.1:11434
-      OLLAMA_MODEL: ${{ inputs.model }}
+      OLLAMA_MODEL: ${{ inputs.model || 'llama3.2:1b' }}
+      BENCHMARK_LIMIT: ${{ inputs.limit || '20' }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Confirm benchmark code ref
+        run: |
+          echo "Benchmark commit: $GITHUB_SHA"
+          echo "Benchmark branch: $GITHUB_REF_NAME"
+          git rev-parse HEAD
+          test -f scripts/validate_spider.py
+          test -f research/spider_benchmark.py
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -35,7 +51,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install -r requirements.txt
-          python -m pip install gdown
+          python -m pip install gdown nltk
           python -m nltk.downloader punkt punkt_tab
 
       - name: Install and start Ollama
@@ -109,17 +125,13 @@ jobs:
         shell: bash
         run: |
           mkdir -p artifacts/spider
-          LIMIT_ARGS=()
-          if [ -n "${{ inputs.limit }}" ]; then
-            LIMIT_ARGS+=(--limit "${{ inputs.limit }}")
-          fi
           python -m research.spider_benchmark \
             --questions data/spider/dev.json \
             --database-dir data/spider/database \
             --spider-eval-dir external/spider \
             --tables-file data/spider/tables.json \
             --output artifacts/spider/p0_p5.json \
-            "${LIMIT_ARGS[@]}"
+            --limit "$BENCHMARK_LIMIT"
 
       - name: Analyze local P0-P5 benchmark
         run: |
@@ -130,17 +142,13 @@ jobs:
       - name: Run local unseen-schema P0-P5 benchmark
         shell: bash
         run: |
-          LIMIT_ARGS=()
-          if [ -n "${{ inputs.limit }}" ]; then
-            LIMIT_ARGS+=(--limit "${{ inputs.limit }}")
-          fi
           python -m research.spider_benchmark \
             --questions data/spider/dev_unseen_schema.json \
             --database-dir data/spider/database \
             --spider-eval-dir external/spider \
             --tables-file data/spider/tables.json \
             --output artifacts/spider/p0_p5_unseen_schema.json \
-            "${LIMIT_ARGS[@]}"
+            --limit "$BENCHMARK_LIMIT"
 
       - name: Analyze local unseen-schema benchmark
         run: |
