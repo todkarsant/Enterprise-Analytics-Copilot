@@ -2,7 +2,8 @@ name: P6-IP Controlled Experiment
 
 on:
   push:
-    branches: [research/p6-ip-defensibility]
+    branches:
+      - research/p6-ip-defensibility
   workflow_dispatch:
 
 concurrency:
@@ -24,11 +25,14 @@ jobs:
   preflight:
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    permissions: {contents: read}
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
-        with: {python-version: '3.11', cache: pip}
+        with:
+          python-version: '3.11'
+          cache: pip
       - run: python -m pip install -r requirements.txt
       - name: Verify local-only contract
         shell: bash
@@ -45,14 +49,18 @@ jobs:
     needs: preflight
     strategy:
       fail-fast: false
-      matrix: {chunk: [0,1,2,3,4,5,6,7,8,9,10,11]}
+      matrix:
+        chunk: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
     runs-on: ubuntu-latest
     timeout-minutes: 350
-    permissions: {contents: read}
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
-        with: {python-version: '3.11', cache: pip}
+        with:
+          python-version: '3.11'
+          cache: pip
       - name: Install dependencies
         run: |
           python -m pip install -r requirements.txt
@@ -81,8 +89,9 @@ jobs:
       - name: Freeze holdout
         run: python scripts/validate_spider.py --root data/spider --write-unseen data/spider/dev_unseen_schema.json --unseen-fraction "$UNSEEN_FRACTION" --unseen-seed "$UNSEEN_SEED"
       - name: Slice chunk
+        env:
+          CHUNK_INDEX: ${{ matrix.chunk }}
         shell: bash
-        env: {CHUNK_INDEX: ${{ matrix.chunk }}}
         run: |
           python - <<'PY'
           import json, os
@@ -102,22 +111,31 @@ jobs:
         run: |
           python -m research.p6_ip_runner --questions data/spider/unseen_chunk.json --database-dir data/spider/database --spider-eval-dir external/spider --tables-file data/spider/tables.json --output artifacts/p6_unseen.json --checkpoint artifacts/p6_unseen.checkpoint.json --policy-timeout-seconds "$POLICY_TIMEOUT_SECONDS"
       - uses: actions/upload-artifact@v4
-        with: {name: p6-ip-chunk-${{ matrix.chunk }}, path: artifacts/, retention-days: 30}
+        with:
+          name: p6-ip-chunk-${{ matrix.chunk }}
+          path: artifacts/
+          retention-days: 30
 
   aggregate:
     needs: benchmark
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    permissions: {contents: read, actions: read}
+    permissions:
+      contents: read
+      actions: read
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
-        with: {python-version: '3.11'}
+        with:
+          python-version: '3.11'
       - name: Install analysis dependencies
         run: python -m pip install -r requirements.txt
       - name: Download P6-IP chunks
         uses: actions/download-artifact@v4
-        with: {pattern: p6-ip-chunk-*, path: artifacts/chunks, merge-multiple: false}
+        with:
+          pattern: p6-ip-chunk-*
+          path: artifacts/chunks
+          merge-multiple: false
       - name: Download frozen P0-P5 evidence
         uses: actions/download-artifact@v4
         with:
@@ -135,4 +153,7 @@ jobs:
       - name: Analyze holdout
         run: python scripts/analyze_p6_ip.py --p6 artifacts/p6_unseen.json --p0-root artifacts/frozen --output artifacts/p6_ip_holdout_analysis.json
       - uses: actions/upload-artifact@v4
-        with: {name: p6-ip-final-analysis-${{ github.run_id }}, path: artifacts/*analysis.json, retention-days: 30}
+        with:
+          name: p6-ip-final-analysis-${{ github.run_id }}
+          path: artifacts/*analysis.json
+          retention-days: 30
