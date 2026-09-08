@@ -1,8 +1,8 @@
 {
   "project": "Project 1 - Enterprise Analytics Copilot",
   "experiment": "P6-IP",
-  "state": "ANALYZED",
-  "previous_state": "ARTIFACT_VALIDATED",
+  "state": "SCIENTIFIC_DECISION",
+  "previous_state": "ANALYZED",
   "design_ref": "docs/PROJECT1_P6_IP_DESIGN.md",
   "implementation_ref": "research/p6_ip_runner.py",
   "ci_run": "34252265013",
@@ -11,7 +11,9 @@
   "repair_reason": "Frozen P0 case-level official correctness labels were incomplete/invalid for case-level pairing; recompute from existing SQL with the pinned official evaluator before any P0-versus-P6 scientific conclusion.",
   "repair_commit": "8b93b99d33839370e22bb60f52b73d20bf727a6b",
   "analysis_artifact": "p6_ip_corrected_dev_analysis.json; p6_ip_corrected_holdout_analysis.json",
+  "scientific_decision": "STOP",
+  "paper_evidence_ref": "paper/PROJECT1_PAPER_DRAFT.md",
   "inference_rerun_authorized": false,
   "holdout_tuning_allowed": false,
-  "last_transition_reason": "Corrected P0/P6 paired analysis and intervention harm/rescue analysis are complete."
+  "last_transition_reason": "P6-IP fails the prespecified stop rule: substantial incumbent harm, very few rescues, higher cost, and lower development accuracy. Stop algorithm development and publish the boundary/failure-mode study."
 }
