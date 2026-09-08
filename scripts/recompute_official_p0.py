@@ -18,15 +18,17 @@ def _chunk_key(path: Path) -> tuple[int, str]:
     return (int(match.group(1)) if match else 10**9, str(path))
 
 
-def load_traces(root: Path) -> list[dict[str, Any]]:
-    """Load only benchmark result JSONs, never checkpoint/duplicate JSONs."""
+def load_traces(root: Path, result_filename: str) -> list[dict[str, Any]]:
+    """Load only the requested benchmark result file, never dev+holdout together."""
+    if result_filename not in RESULT_FILENAMES:
+        raise ValueError(f"Unsupported P0 result filename: {result_filename}")
     traces: list[dict[str, Any]] = []
     paths = sorted(
-        (p for p in root.rglob("*.json") if p.name in RESULT_FILENAMES),
+        (p for p in root.rglob("*.json") if p.name == result_filename),
         key=_chunk_key,
     )
     if not paths:
-        raise ValueError(f"No P0 benchmark result artifacts found under {root}")
+        raise ValueError(f"No P0 benchmark result artifacts named {result_filename} found under {root}")
     for path in paths:
         try:
             payload = json.loads(path.read_text(encoding="utf-8"))
@@ -36,7 +38,7 @@ def load_traces(root: Path) -> list[dict[str, Any]]:
             raise ValueError(f"Benchmark artifact has no trace list: {path}")
         traces.extend(t for t in payload["traces"] if t.get("policy") == "P0")
     if not traces:
-        raise ValueError(f"No P0 traces found in benchmark result artifacts under {root}")
+        raise ValueError(f"No P0 traces found in {result_filename} artifacts under {root}")
     return traces
 
 
@@ -48,9 +50,14 @@ def main() -> None:
     ap.add_argument("--tables-file", type=Path, required=True)
     ap.add_argument("--spider-eval-dir", type=Path, required=True)
     ap.add_argument("--output", type=Path, required=True)
+    ap.add_argument("--result-filename", choices=sorted(RESULT_FILENAMES), help="Frozen benchmark artifact family to recompute")
     args = ap.parse_args()
 
-    traces = load_traces(args.p0_root)
+    result_filename = args.result_filename
+    if result_filename is None:
+        result_filename = "p0_p5_unseen.json" if "unseen" in args.question_file.name else "p0_p5_dev.json"
+
+    traces = load_traces(args.p0_root, result_filename)
     questions = json.loads(args.question_file.read_text(encoding="utf-8"))
     if not isinstance(questions, list):
         raise ValueError("Question file must contain a JSON list")
@@ -88,8 +95,9 @@ def main() -> None:
             )
 
     payload = {
-        "schema_version": "p0-official-recompute-v2",
+        "schema_version": "p0-official-recompute-v3",
         "source_root": str(args.p0_root),
+        "source_result_filename": result_filename,
         "question_file": str(args.question_file),
         "trace_count": len(corrected),
         "case_key": "(question, db_id, occurrence_in_dataset_order)",
@@ -99,6 +107,7 @@ def main() -> None:
     args.output.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
     print(json.dumps({
         "status": "recomputed",
+        "result_filename": result_filename,
         "traces": len(corrected),
         "official_correct": sum(bool(r["official_execution_correct"]) for r in corrected),
         "output_sha256": hashlib.sha256(args.output.read_bytes()).hexdigest(),
