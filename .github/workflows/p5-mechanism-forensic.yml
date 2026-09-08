@@ -133,8 +133,7 @@ jobs:
           test "$(git -C external/spider rev-parse HEAD)" = "$SPIDER_EVALUATOR_COMMIT"
       - name: Run P5R development chunk
         run: |
-          python -m research.spider_benchmark_isolated \
-            --policies P5R \
+          python -m research.spider_benchmark_challenger \
             --questions data/spider/dev_chunk.json \
             --database-dir data/spider/database \
             --spider-eval-dir external/spider \
@@ -144,8 +143,7 @@ jobs:
             --policy-timeout-seconds "$POLICY_TIMEOUT_SECONDS"
       - name: Run P5R unseen-schema chunk
         run: |
-          python -m research.spider_benchmark_isolated \
-            --policies P5R \
+          python -m research.spider_benchmark_challenger \
             --questions data/spider/unseen_chunk.json \
             --database-dir data/spider/database \
             --spider-eval-dir external/spider \
