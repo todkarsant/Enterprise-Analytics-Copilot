@@ -14,6 +14,7 @@ from typing import Any
 from app.services.llm import AzureOpenAIProvider, LLMProvider, OllamaProvider
 from research.deterministic_solver import RuleBasedDeterministicSolver
 from research.experiment import State, query_complexity
+from research.p5_selector import assess_strict_evidence
 from research.spider_official_eval import evaluate_traces
 
 POLICIES = ("P0", "P1", "P2", "P3", "P4", "P5")
@@ -100,7 +101,8 @@ class SecondaryExecutionEvaluator:
 class BenchmarkEnvironment:
     COSTS = {"retrieve_schema": .02, "deterministic_execute": .05, "generate_sql": .20, "execute_sql": .05, "verify_sql": .12, "repair_sql": .16, "agentic_escalation": .45, "abstain": 0.0}
     def __init__(self, dataset, evaluator, provider, deterministic, max_cost=1.0):
-        self.dataset, self.evaluator, self.provider, self.deterministic, self.max_cost = dataset, evaluator, provider, deterministic, max_cost
+        self.dataset, self.evaluator, self.provider, self.deterministic, self.max_cost = dataset, evaluator, provider, deterministic
+        self.max_cost = max_cost
     def _add_cost(self, trace, action):
         if trace.cost + self.COSTS[action] > self.max_cost:
             trace.termination_reason = "budget_exhausted"; trace.actions.append("abstain"); return False
@@ -121,9 +123,6 @@ class BenchmarkEnvironment:
     @staticmethod
     def needs_post_evidence_escalation(question, sql, row_count):
         q = question.lower(); s = sql.lower()
-        # Only explicit predicate/condition language is evidence for a missing
-        # predicate. Generic relation words such as "of", "in", "for", and
-        # "from" are intentionally excluded because they create false positives.
         predicate_patterns = (
             r"\bwhose\b", r"\bnamed\b", r"\bwhere\b", r"\bwith\s+(?:the\s+)?(?:name|id|number|value)\b",
             r"\bthat\s+(?:has|have|is|are|contains|contain)\b",
@@ -138,6 +137,31 @@ class BenchmarkEnvironment:
         if structural_risk: return True, "structural_complexity_not_reflected"
         if row_count == 0 and any(k in q for k in ("who", "which", "what", "name", "names")): return True, "empty_result"
         return False, None
+
+    def _run_p5(self, trace, example, schema, strict=False):
+        sql = self.deterministic_sql(trace)
+        if sql is not None and self._add_cost(trace, "deterministic_execute"):
+            trace.generated_sql = sql; trace.sql_valid = self.execute(trace, sql)
+        else: trace.sql_valid = False
+        if strict:
+            escalate, reason = assess_strict_evidence(example.question, trace.generated_sql or "", trace.evidence_row_count)
+        else:
+            escalate, reason = self.needs_post_evidence_escalation(example.question, trace.generated_sql or "", trace.evidence_row_count)
+        if trace.execution_ok is False: escalate, reason = True, "execution_failure"
+        if escalate:
+            trace.evidence_escalated = True; trace.evidence_reason = reason
+            if not self._add_cost(trace, "generate_sql"): return
+            sql = self.llm_sql(trace, schema, escalated=True); trace.generated_sql = sql; trace.sql_valid = bool(sql)
+            if sql and self._add_cost(trace, "execute_sql"): self.execute(trace, sql)
+            if not trace.execution_ok and sql:
+                if self._add_cost(trace, "repair_sql"):
+                    repaired = self.llm_sql(trace, schema, repair_reason=trace.error, escalated=True)
+                    if repaired:
+                        trace.generated_sql = repaired; trace.sql_valid = True
+                        if self._add_cost(trace, "execute_sql"): self.execute(trace, repaired)
+        if not trace.execution_ok and trace.generated_sql and self._add_cost(trace, "verify_sql"):
+            trace.sql_valid = trace.generated_sql.strip().lower().startswith(("select", "with"))
+
     def run(self, example, policy):
         trace = Trace(example.question, example.db_id, policy); started = time.perf_counter(); schema = self.dataset.schema(example.db_id); sql = None
         try:
@@ -162,25 +186,9 @@ class BenchmarkEnvironment:
                     sql = self.llm_sql(trace, schema); trace.generated_sql = sql; trace.sql_valid = bool(sql)
                     if sql and self._add_cost(trace, "execute_sql"): self.execute(trace, sql)
             elif policy == "P5":
-                sql = self.deterministic_sql(trace)
-                if sql is not None and self._add_cost(trace, "deterministic_execute"):
-                    trace.generated_sql = sql; trace.sql_valid = self.execute(trace, sql)
-                else: trace.sql_valid = False
-                escalate, reason = self.needs_post_evidence_escalation(example.question, trace.generated_sql or "", trace.evidence_row_count)
-                if trace.execution_ok is False: escalate, reason = True, "execution_failure"
-                if escalate:
-                    trace.evidence_escalated = True; trace.evidence_reason = reason
-                    if not self._add_cost(trace, "generate_sql"): return trace
-                    sql = self.llm_sql(trace, schema, escalated=True); trace.generated_sql = sql; trace.sql_valid = bool(sql)
-                    if sql and self._add_cost(trace, "execute_sql"): self.execute(trace, sql)
-                    if not trace.execution_ok and sql:
-                        if self._add_cost(trace, "repair_sql"):
-                            repaired = self.llm_sql(trace, schema, repair_reason=trace.error, escalated=True)
-                            if repaired:
-                                trace.generated_sql = repaired; trace.sql_valid = True
-                                if self._add_cost(trace, "execute_sql"): self.execute(trace, repaired)
-                if not trace.execution_ok and trace.generated_sql and self._add_cost(trace, "verify_sql"):
-                    trace.sql_valid = trace.generated_sql.strip().lower().startswith(("select", "with"))
+                self._run_p5(trace, example, schema, strict=False)
+            elif policy == "P5R":
+                self._run_p5(trace, example, schema, strict=True)
             else: raise ValueError(f"Unknown policy {policy}")
             if not trace.termination_reason: trace.actions.append("abstain"); trace.termination_reason = "policy_complete"
         except Exception as exc:
@@ -205,7 +213,7 @@ def main():
         official=evaluate_traces(payload,args.database_dir,args.tables_file,args.spider_eval_dir); payload["official_spider_execution"]=official; payload["results"]={}
         for policy in POLICIES:
             rows=[t for t in payload["traces"] if t["policy"]==policy]; n=len(rows); rel=sum(bool(t["official_execution_correct"]) for t in rows)/n if n else 0.0
-            payload["results"][policy]={"n":n,"execution_correctness":rel,"coverage":sum(bool(t["generated_sql"]) for t in rows)/n if n else 0.0,"mean_cost":statistics.mean(t["cost"] for t in rows) if rows else None,"median_latency_ms":statistics.median(t["latency_ms"] for t in rows) if rows else None,"mean_llm_calls":statistics.mean(t["llm_calls"] for t in rows) if rows else None,"targets":{str(r):rel>=r for r in (.90,.95,.97,.99)}}
+            payload["results"][policy]={"n":n,"execution_correctness":rel,"coverage":sum(bool(t["generated_sql"]) for t in rows)/n if n else None,"mean_cost":statistics.mean(t["cost"] for t in rows) if rows else None,"median_latency_ms":statistics.median(t["latency_ms"] for t in rows) if rows else None,"mean_llm_calls":statistics.mean(t["llm_calls"] for t in rows) if rows else None,"targets":{str(r):rel>=r for r in (.90,.95,.97,.99)}}
     else: payload["status"]="benchmark_run_without_official_evaluator"; payload["results"]=payload["secondary_custom_results"]
     args.output.parent.mkdir(parents=True,exist_ok=True); args.output.write_text(json.dumps(payload,indent=2),encoding="utf-8"); print(json.dumps(payload["results"],indent=2))
 
