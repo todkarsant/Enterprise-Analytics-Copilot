@@ -1,0 +1,110 @@
+name: P1 Spider Chunk 5 Recovery
+
+on:
+  push:
+    branches:
+      - research/p1-evaluator-hardening
+
+concurrency:
+  group: p1-spider-chunk5-recovery
+  cancel-in-progress: false
+
+env:
+  PYTHONPATH: .
+  LLM_PROVIDER: ollama
+  OLLAMA_BASE_URL: http://127.0.0.1:11434
+  OLLAMA_MODEL: llama3.2:1b
+  SPIDER_EVALUATOR_COMMIT: b7b5b8c890cd30e35427348bb9eb8c6d1350ca7c
+  UNSEEN_FRACTION: '0.20'
+  UNSEEN_SEED: '1729'
+  SOURCE_RUN_ID: '34184901523'
+
+jobs:
+  recover-chunk-5:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+      - name: Install dependencies
+        run: |
+          python -m pip install -r requirements.txt
+          python -m pip install gdown nltk
+          python -m nltk.downloader punkt punkt_tab
+      - name: Install and start Ollama
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fsSL https://ollama.com/install.sh | sh
+          ollama serve > /tmp/ollama.log 2>&1 &
+          for i in $(seq 1 60); do curl -fsS "$OLLAMA_BASE_URL/api/tags" >/dev/null 2>&1 && break; sleep 2; done
+          curl -fsS "$OLLAMA_BASE_URL/api/tags" >/dev/null
+          ollama pull "$OLLAMA_MODEL"
+      - name: Download Spider
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p data
+          gdown "https://drive.google.com/uc?id=1403EGqzIDoHMdQF4c9Bkyl7dZLZ5Wt6J" -O data/spider_data.zip
+          unzip -q data/spider_data.zip -d data/spider_unpacked
+          mkdir -p data/spider
+          find data/spider_unpacked -name dev.json -exec cp {} data/spider/dev.json \;
+          find data/spider_unpacked -name tables.json -exec cp {} data/spider/tables.json \;
+          DB_DIR=$(find data/spider_unpacked -type d -name database | head -n 1)
+          cp -R "$DB_DIR" data/spider/database
+      - name: Freeze and slice chunk 5
+        shell: bash
+        run: |
+          python scripts/validate_spider.py --root data/spider --write-unseen data/spider/dev_unseen_schema.json --unseen-fraction "$UNSEEN_FRACTION" --unseen-seed "$UNSEEN_SEED"
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          for src,dst in [('data/spider/dev.json','data/spider/dev_chunk.json'),('data/spider/dev_unseen_schema.json','data/spider/unseen_chunk.json')]:
+              rows=json.loads(Path(src).read_text()); a=5*90; b=min(6*90,len(rows)); Path(dst).write_text(json.dumps(rows[a:b],indent=2)+'\n')
+          PY
+      - name: Fetch pinned official evaluator
+        run: |
+          git clone --quiet https://github.com/taoyds/spider.git external/spider
+          git -C external/spider checkout --quiet "$SPIDER_EVALUATOR_COMMIT"
+      - name: Verify local provider
+        run: |
+          test "$LLM_PROVIDER" = ollama
+          test -z "${AZURE_OPENAI_API_KEY:-}"
+          test -z "${AZURE_API_KEY:-}"
+          test -z "${OPENAI_API_KEY:-}"
+      - name: Run bounded development chunk 5
+        run: |
+          mkdir -p artifacts/spider
+          python -m research.spider_benchmark_bounded \
+            --questions data/spider/dev_chunk.json \
+            --database-dir data/spider/database \
+            --spider-eval-dir external/spider \
+            --tables-file data/spider/tables.json \
+            --checkpoint artifacts/spider/p0_p5_dev.checkpoint.json \
+            --output artifacts/spider/p0_p5_dev.json \
+            --policy-timeout-seconds 150
+      - name: Run bounded unseen chunk 5
+        run: |
+          python -m research.spider_benchmark_bounded \
+            --questions data/spider/unseen_chunk.json \
+            --database-dir data/spider/database \
+            --spider-eval-dir external/spider \
+            --tables-file data/spider/tables.json \
+            --checkpoint artifacts/spider/p0_p5_unseen.checkpoint.json \
+            --output artifacts/spider/p0_p5_unseen.json \
+            --policy-timeout-seconds 150
+      - name: Upload recovered chunk 5
+        uses: actions/upload-artifact@v4
+        with:
+          name: p1-spider-chunk-5-recovered
+          path: artifacts/spider/
+          retention-days: 30
