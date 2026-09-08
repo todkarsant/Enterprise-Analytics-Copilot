@@ -1,0 +1,217 @@
+name: P5 Mechanism Forensic Challenger
+
+on:
+  push:
+    branches:
+      - research/p5-mechanism-forensics
+  workflow_dispatch:
+    inputs:
+      model:
+        description: Local Ollama model
+        required: true
+        default: llama3.2:1b
+        type: string
+      run_limit:
+        description: Optional prefix limit per split; blank means full set
+        required: false
+        default: ''
+        type: string
+
+concurrency:
+  group: p5-mechanism-forensic
+  cancel-in-progress: false
+
+env:
+  PYTHONPATH: .
+  LLM_PROVIDER: ollama
+  OLLAMA_BASE_URL: http://127.0.0.1:11434
+  OLLAMA_MODEL: ${{ inputs.model || 'llama3.2:1b' }}
+  RUN_LIMIT: ${{ inputs.run_limit || '' }}
+  UNSEEN_FRACTION: '0.20'
+  UNSEEN_SEED: '1729'
+  SPIDER_EVALUATOR_COMMIT: b7b5b8c890cd30e35427348bb9eb8c6d1350ca7c
+  CHUNK_SIZE: '90'
+  POLICY_TIMEOUT_SECONDS: '150'
+
+jobs:
+  preflight:
+    if: ${{ github.event_name != 'push' || contains(github.event.head_commit.message, '[launch-p5-mechanism-forensic]') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+      - run: python -m pip install -r requirements.txt
+      - name: Verify local-only execution contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF_NAME" = "research/p5-mechanism-forensics"
+          test "$LLM_PROVIDER" = ollama
+          test -z "${AZURE_OPENAI_API_KEY:-}"
+          test -z "${AZURE_API_KEY:-}"
+          test -z "${OPENAI_API_KEY:-}"
+      - name: Run unit tests
+        run: pytest -q tests/test_p5_strict_selector.py tests/test_p5_policy.py
+
+  benchmark:
+    needs: preflight
+    strategy:
+      fail-fast: false
+      matrix:
+        chunk: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+      - name: Install dependencies
+        run: |
+          python -m pip install -r requirements.txt
+          python -m pip install gdown nltk
+          python -m nltk.downloader punkt punkt_tab
+      - name: Install and start Ollama
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fsSL https://ollama.com/install.sh | sh
+          ollama serve > /tmp/ollama.log 2>&1 &
+          for i in $(seq 1 60); do
+            curl -fsS "$OLLAMA_BASE_URL/api/tags" >/dev/null 2>&1 && break
+            sleep 2
+          done
+          curl -fsS "$OLLAMA_BASE_URL/api/tags" >/dev/null
+          ollama pull "$OLLAMA_MODEL"
+      - name: Download official Spider 1.0 dataset
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p data
+          gdown "https://drive.google.com/uc?id=1403EGqzIDoHMdQF4c9Bkyl7dZLZ5Wt6J" -O data/spider_data.zip
+          unzip -q data/spider_data.zip -d data/spider_unpacked
+          mkdir -p data/spider
+          find data/spider_unpacked -name dev.json -exec cp {} data/spider/dev.json \;
+          find data/spider_unpacked -name tables.json -exec cp {} data/spider/tables.json \;
+          DB_DIR=$(find data/spider_unpacked -type d -name database | head -n 1)
+          test -n "$DB_DIR"
+          cp -R "$DB_DIR" data/spider/database
+      - name: Freeze unseen-schema holdout
+        run: python scripts/validate_spider.py --root data/spider --write-unseen data/spider/dev_unseen_schema.json --unseen-fraction "$UNSEEN_FRACTION" --unseen-seed "$UNSEEN_SEED"
+      - name: Slice deterministic chunk
+        shell: bash
+        env:
+          CHUNK_INDEX: ${{ matrix.chunk }}
+        run: |
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          chunk=int(os.environ['CHUNK_INDEX']); size=int(os.environ['CHUNK_SIZE']); limit=os.environ.get('RUN_LIMIT')
+          for src,dst in [('data/spider/dev.json','data/spider/dev_chunk.json'),('data/spider/dev_unseen_schema.json','data/spider/unseen_chunk.json')]:
+              rows=json.loads(Path(src).read_text())
+              if limit: rows=rows[:int(limit)]
+              a=chunk*size; b=min((chunk+1)*size,len(rows))
+              Path(dst).write_text(json.dumps(rows[a:b],indent=2)+'\n')
+          PY
+      - name: Fetch pinned official Spider evaluator
+        run: |
+          git clone --quiet https://github.com/taoyds/spider.git external/spider
+          git -C external/spider checkout --quiet "$SPIDER_EVALUATOR_COMMIT"
+          test "$(git -C external/spider rev-parse HEAD)" = "$SPIDER_EVALUATOR_COMMIT"
+      - name: Run P5R development chunk
+        run: |
+          python -m research.spider_benchmark_isolated \
+            --policies P5R \
+            --questions data/spider/dev_chunk.json \
+            --database-dir data/spider/database \
+            --spider-eval-dir external/spider \
+            --tables-file data/spider/tables.json \
+            --output artifacts/p5r_dev.json \
+            --checkpoint artifacts/p5r_dev.checkpoint.json \
+            --policy-timeout-seconds "$POLICY_TIMEOUT_SECONDS"
+      - name: Run P5R unseen-schema chunk
+        run: |
+          python -m research.spider_benchmark_isolated \
+            --policies P5R \
+            --questions data/spider/unseen_chunk.json \
+            --database-dir data/spider/database \
+            --spider-eval-dir external/spider \
+            --tables-file data/spider/tables.json \
+            --output artifacts/p5r_unseen.json \
+            --checkpoint artifacts/p5r_unseen.checkpoint.json \
+            --policy-timeout-seconds "$POLICY_TIMEOUT_SECONDS"
+      - name: Upload P5R chunk
+        uses: actions/upload-artifact@v4
+        with:
+          name: p5r-mechanism-chunk-${{ matrix.chunk }}
+          path: artifacts/
+          retention-days: 30
+
+  aggregate:
+    needs: benchmark
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install analysis dependencies
+        run: |
+          python -m pip install -r requirements.txt
+          python -m pip install gdown nltk
+      - name: Download P5R chunks
+        uses: actions/download-artifact@v4
+        with:
+          pattern: p5r-mechanism-chunk-*
+          path: artifacts/chunks
+          merge-multiple: false
+      - name: Download frozen P0-P5 evidence
+        uses: actions/download-artifact@v4
+        with:
+          run-id: 34206500727
+          github-token: ${{ github.token }}
+          pattern: p1-spider-isolated-chunk-*
+          path: artifacts/frozen
+          merge-multiple: false
+      - name: Prepare Spider evaluator and data
+        shell: bash
+        run: |
+          mkdir -p data
+          gdown "https://drive.google.com/uc?id=1403EGqzIDoHMdQF4c9Bkyl7dZLZ5Wt6J" -O data/spider_data.zip
+          unzip -q data/spider_data.zip -d data/spider_unpacked
+          mkdir -p data/spider
+          find data/spider_unpacked -name tables.json -exec cp {} data/spider/tables.json \;
+          DB_DIR=$(find data/spider_unpacked -type d -name database | head -n 1)
+          cp -R "$DB_DIR" data/spider/database
+          git clone --quiet https://github.com/taoyds/spider.git external/spider
+          git -C external/spider checkout --quiet "$SPIDER_EVALUATOR_COMMIT"
+      - name: Merge P5R development traces
+        run: python scripts/merge_spider_benchmark_chunks.py --input-root artifacts/chunks --pattern p5r_dev.json --output artifacts/p5r_dev.json
+      - name: Merge P5R unseen traces
+        run: python scripts/merge_spider_benchmark_chunks.py --input-root artifacts/chunks --pattern p5r_unseen.json --output artifacts/p5r_unseen.json
+      - name: Analyze P5R against frozen P0-P5
+        run: python scripts/analyze_p5_mechanism.py --frozen-root artifacts/frozen --p5r-dev artifacts/p5r_dev.json --p5r-unseen artifacts/p5r_unseen.json --output artifacts/p5_mechanism_result.json
+      - name: Upload mechanism result
+        uses: actions/upload-artifact@v4
+        with:
+          name: p5-mechanism-forensic-result-${{ github.run_id }}
+          path: artifacts/p5_mechanism_result.json
+          retention-days: 30
