@@ -84,27 +84,90 @@ jobs:
       - name: Run bounded development chunk 5
         run: |
           mkdir -p artifacts/spider
-          python -m research.spider_benchmark_bounded \
-            --questions data/spider/dev_chunk.json \
-            --database-dir data/spider/database \
-            --spider-eval-dir external/spider \
-            --tables-file data/spider/tables.json \
-            --checkpoint artifacts/spider/p0_p5_dev.checkpoint.json \
-            --output artifacts/spider/p0_p5_dev.json \
-            --policy-timeout-seconds 150
+          python -m research.spider_benchmark_bounded --questions data/spider/dev_chunk.json --database-dir data/spider/database --spider-eval-dir external/spider --tables-file data/spider/tables.json --checkpoint artifacts/spider/p0_p5_dev.checkpoint.json --output artifacts/spider/p0_p5_dev.json --policy-timeout-seconds 150
       - name: Run bounded unseen chunk 5
         run: |
-          python -m research.spider_benchmark_bounded \
-            --questions data/spider/unseen_chunk.json \
-            --database-dir data/spider/database \
-            --spider-eval-dir external/spider \
-            --tables-file data/spider/tables.json \
-            --checkpoint artifacts/spider/p0_p5_unseen.checkpoint.json \
-            --output artifacts/spider/p0_p5_unseen.json \
-            --policy-timeout-seconds 150
+          python -m research.spider_benchmark_bounded --questions data/spider/unseen_chunk.json --database-dir data/spider/database --spider-eval-dir external/spider --tables-file data/spider/tables.json --checkpoint artifacts/spider/p0_p5_unseen.checkpoint.json --output artifacts/spider/p0_p5_unseen.json --policy-timeout-seconds 150
       - name: Upload recovered chunk 5
         uses: actions/upload-artifact@v4
         with:
           name: p1-spider-chunk-5-recovered
           path: artifacts/spider/
+          retention-days: 30
+
+  aggregate-preserved-cycle:
+    needs: recover-chunk-5
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install analysis dependencies
+        run: |
+          python -m pip install -r requirements.txt
+          python -m pip install gdown nltk
+          python -m nltk.downloader punkt punkt_tab
+      - name: Download preserved chunks 0-4,6-11 from source run
+        uses: actions/download-artifact@v5
+        with:
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ env.SOURCE_RUN_ID }}
+          pattern: p1-spider-chunk-*
+          path: artifacts/chunks
+          merge-multiple: false
+      - name: Download recovered chunk 5
+        uses: actions/download-artifact@v5
+        with:
+          name: p1-spider-chunk-5-recovered
+          path: artifacts/chunks/p1-spider-chunk-5-recovered
+      - name: Prepare Spider evaluator and data
+        shell: bash
+        run: |
+          mkdir -p data
+          gdown "https://drive.google.com/uc?id=1403EGqzIDoHMdQF4c9Bkyl7dZLZ5Wt6J" -O data/spider_data.zip
+          unzip -q data/spider_data.zip -d data/spider_unpacked
+          mkdir -p data/spider
+          find data/spider_unpacked -name tables.json -exec cp {} data/spider/tables.json \;
+          DB_DIR=$(find data/spider_unpacked -type d -name database | head -n 1)
+          cp -R "$DB_DIR" data/spider/database
+          git clone --quiet https://github.com/taoyds/spider.git external/spider
+          git -C external/spider checkout --quiet "$SPIDER_EVALUATOR_COMMIT"
+      - name: Verify exactly 12 development chunk payloads
+        shell: bash
+        run: |
+          test "$(find artifacts/chunks -name p0_p5_dev.json | wc -l)" -eq 12
+          test "$(find artifacts/chunks -name p0_p5_unseen.json | wc -l)" -eq 12
+      - name: Merge development traces
+        run: mkdir -p artifacts/final && python scripts/merge_spider_benchmark_chunks.py --input-root artifacts/chunks --pattern p0_p5_dev.json --output artifacts/final/p0_p5.json
+      - name: Merge unseen traces
+        run: python scripts/merge_spider_benchmark_chunks.py --input-root artifacts/chunks --pattern p0_p5_unseen.json --output artifacts/final/p0_p5_unseen_schema.json
+      - name: Analyze development benchmark
+        run: python scripts/analyze_research_benchmark.py artifacts/final/p0_p5.json --output artifacts/final/p0_p5_analysis.json
+      - name: Analyze unseen-schema benchmark
+        run: python scripts/analyze_research_benchmark.py artifacts/final/p0_p5_unseen_schema.json --output artifacts/final/p0_p5_unseen_schema_analysis.json
+      - name: Development evaluator forensics
+        run: python -m research.spider_evaluator_forensics --payload artifacts/final/p0_p5.json --database-dir data/spider/database --tables-file data/spider/tables.json --spider-eval-dir external/spider --output artifacts/final/p0_p5_evaluator_forensics.json
+      - name: Unseen evaluator forensics
+        run: python -m research.spider_evaluator_forensics --payload artifacts/final/p0_p5_unseen_schema.json --database-dir data/spider/database --tables-file data/spider/tables.json --spider-eval-dir external/spider --output artifacts/final/p0_p5_unseen_schema_forensics.json
+      - name: Create P5 research gate
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          report={'status':'P5_GATE_PENDING_HUMAN_REVIEW','automated_decision':'STOP_AT_P5','primary_rule':'Do not implement P6 unless P5 shows a defensible improvement at matched reliability/cost/latency criteria.','development_analysis':json.loads(Path('artifacts/final/p0_p5_analysis.json').read_text()),'unseen_schema_analysis':json.loads(Path('artifacts/final/p0_p5_unseen_schema_analysis.json').read_text()),'note':'Recovered chunk 5 uses bounded runtime controls; timeout traces remain in the denominator and are not silently excluded.'}
+          Path('artifacts/final/p5_research_gate.json').write_text(json.dumps(report,indent=2)+'\n')
+          PY
+      - name: Upload complete recovered research evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: p1-research-cycle-recovered-${{ github.run_id }}
+          path: artifacts/final/
           retention-days: 30
