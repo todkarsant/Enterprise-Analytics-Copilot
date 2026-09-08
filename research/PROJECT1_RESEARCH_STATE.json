@@ -1,0 +1,13 @@
+{
+  "project": "Project 1 - Enterprise Analytics Copilot",
+  "experiment": "P6-IP",
+  "state": "ARTIFACT_VALIDATED",
+  "design_ref": "docs/PROJECT1_P6_IP_DESIGN.md",
+  "implementation_ref": "research/p6_ip_runner.py",
+  "ci_run": "34252265013",
+  "execution_run": "34252265013",
+  "artifact_manifest": "p6-ip-final-analysis-34252265013",
+  "scientific_decision": "REPAIR_REQUIRED",
+  "state_note": "P6 execution completed, but frozen P0 case-level official labels were found invalid/incomplete. Post-hoc P0 recomputation is required before scientific comparison is valid. No inference rerun is authorized by this state artifact.",
+  "last_transition_reason": "Do not advance to ANALYZED until comparator correctness and artifact integrity are validated."
+}
