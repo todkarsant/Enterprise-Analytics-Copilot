@@ -1,0 +1,191 @@
+name: P1 Posthoc Conclusion
+
+# Post-hoc analysis only. This workflow consumes the completed benchmark artifacts
+# from a frozen run; it never invokes Ollama/Azure and never reruns P0-P5.
+on:
+  push:
+    branches:
+      - research/p1-evaluator-hardening
+  workflow_dispatch:
+    inputs:
+      source_run_id:
+        description: Completed isolated benchmark workflow run ID
+        required: true
+        default: '34206500727'
+        type: string
+
+concurrency:
+  group: p1-posthoc-conclusion
+  cancel-in-progress: true
+
+env:
+  PYTHONPATH: .
+  LLM_PROVIDER: ollama
+  OLLAMA_MODEL: llama3.2:1b
+  UNSEEN_FRACTION: '0.20'
+  UNSEEN_SEED: '1729'
+  SPIDER_EVALUATOR_COMMIT: b7b5b8c890cd30e35427348bb9eb8c6d1350ca7c
+  SOURCE_RUN_ID: ${{ inputs.source_run_id || '34206500727' }}
+
+jobs:
+  conclude:
+    if: ${{ github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[launch-p1-posthoc]') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+
+      - name: Install analysis dependencies
+        run: |
+          python -m pip install -r requirements.txt
+          python -m pip install gdown nltk
+          python -m nltk.downloader punkt punkt_tab
+
+      - name: Download frozen benchmark chunks from source run
+        uses: actions/download-artifact@v4
+        with:
+          pattern: p1-spider-isolated-chunk-*
+          path: artifacts/chunks
+          merge-multiple: false
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ env.SOURCE_RUN_ID }}
+
+      - name: Verify all 12 chunks are present
+        shell: bash
+        run: |
+          set -euo pipefail
+          count=$(find artifacts/chunks -name 'p0_p5_dev.json' | wc -l)
+          unseen=$(find artifacts/chunks -name 'p0_p5_unseen.json' | wc -l)
+          test "$count" -eq 12
+          test "$unseen" -eq 12
+          echo "development chunks: $count"
+          echo "unseen chunks: $unseen"
+
+      - name: Prepare frozen Spider data and evaluator
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p data
+          gdown "https://drive.google.com/uc?id=1403EGqzIDoHMdQF4c9Bkyl7dZLZ5Wt6J" -O data/spider_data.zip
+          unzip -q data/spider_data.zip -d data/spider_unpacked
+          mkdir -p data/spider
+          find data/spider_unpacked -name dev.json -exec cp {} data/spider/dev.json \;
+          find data/spider_unpacked -name tables.json -exec cp {} data/spider/tables.json \;
+          DB_DIR=$(find data/spider_unpacked -type d -name database | head -n 1)
+          test -n "$DB_DIR"
+          cp -R "$DB_DIR" data/spider/database
+          python scripts/validate_spider.py --root data/spider --write-unseen data/spider/dev_unseen_schema.json --unseen-fraction "$UNSEEN_FRACTION" --unseen-seed "$UNSEEN_SEED"
+          git clone --quiet https://github.com/taoyds/spider.git external/spider
+          git -C external/spider checkout --quiet "$SPIDER_EVALUATOR_COMMIT"
+          test "$(git -C external/spider rev-parse HEAD)" = "$SPIDER_EVALUATOR_COMMIT"
+
+      - name: Verify source provenance across chunks
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          manifests=sorted(Path('artifacts/chunks').glob('*/manifest.json'))
+          assert len(manifests)==12, manifests
+          rows=[json.loads(p.read_text()) for p in manifests]
+          commits={r['git_commit'] for r in rows}
+          evaluators={r['spider_evaluator_commit'] for r in rows}
+          models={r['model'] for r in rows}
+          providers={r['provider'] for r in rows}
+          seeds={r['unseen_seed'] for r in rows}
+          fractions={r['unseen_fraction'] for r in rows}
+          runners={r['runner'] for r in rows}
+          assert len(commits)==1 and len(evaluators)==1 and len(models)==1 and len(providers)==1
+          assert seeds=={1729} and fractions=={0.2} and runners=={'research.spider_benchmark_isolated'}
+          assert providers=={'ollama'}
+          print(json.dumps({'git_commit': sorted(commits)[0], 'evaluator': sorted(evaluators)[0], 'model': sorted(models)[0], 'provider': sorted(providers)[0], 'chunks': len(rows)}, indent=2))
+          PY
+
+      - name: Merge frozen development traces
+        run: mkdir -p artifacts/final && python scripts/merge_spider_benchmark_chunks.py --input-root artifacts/chunks --pattern p0_p5_dev.json --output artifacts/final/p0_p5.json
+
+      - name: Merge frozen unseen traces
+        run: python scripts/merge_spider_benchmark_chunks.py --input-root artifacts/chunks --pattern p0_p5_unseen.json --output artifacts/final/p0_p5_unseen_schema.json
+
+      - name: Analyze development benchmark
+        run: python scripts/analyze_research_benchmark.py artifacts/final/p0_p5.json --output artifacts/final/p0_p5_analysis.json
+
+      - name: Analyze unseen-schema benchmark
+        run: python scripts/analyze_research_benchmark.py artifacts/final/p0_p5_unseen_schema.json --output artifacts/final/p0_p5_unseen_schema_analysis.json
+
+      - name: Add explicit frozen dataset manifests for forensic analysis
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          for src,dst,qfile in [
+              ('artifacts/final/p0_p5.json','artifacts/final/p0_p5_forensics_input.json','data/spider/dev.json'),
+              ('artifacts/final/p0_p5_unseen_schema.json','artifacts/final/p0_p5_unseen_forensics_input.json','data/spider/dev_unseen_schema.json'),
+          ]:
+              p=json.loads(Path(src).read_text())
+              p['dataset_manifest']={'question_file':qfile}
+              Path(dst).write_text(json.dumps(p,indent=2)+'\n')
+          PY
+
+      - name: Development evaluator forensics
+        run: python -m research.spider_evaluator_forensics --payload artifacts/final/p0_p5_forensics_input.json --database-dir data/spider/database --tables-file data/spider/tables.json --spider-eval-dir external/spider --output artifacts/final/p0_p5_evaluator_forensics.json
+
+      - name: Unseen evaluator forensics
+        run: python -m research.spider_evaluator_forensics --payload artifacts/final/p0_p5_unseen_forensics_input.json --database-dir data/spider/database --tables-file data/spider/tables.json --spider-eval-dir external/spider --output artifacts/final/p0_p5_unseen_schema_forensics.json
+
+      - name: Produce conclusive research report
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          dev=json.loads(Path('artifacts/final/p0_p5_analysis.json').read_text())
+          unseen=json.loads(Path('artifacts/final/p0_p5_unseen_schema_analysis.json').read_text())
+          forensic=json.loads(Path('artifacts/final/p0_p5_evaluator_forensics.json').read_text())
+          uforensic=json.loads(Path('artifacts/final/p0_p5_unseen_schema_forensics.json').read_text())
+          ps=dev['policy_summary']
+          pair=dev['paired_statistics']['P0_vs_P5']
+          up=unseen['policy_summary']
+          conclusion={
+            'status':'P1_CONCLUSIVE_NEGATIVE_RESULT_STOP_AT_P5',
+            'source_run_id':int(__import__('os').environ['SOURCE_RUN_ID']),
+            'benchmark':dev['benchmark'],
+            'development_question_count':dev['question_count'],
+            'unseen_question_count':unseen['question_count'],
+            'primary_metric':dev['primary_metric'],
+            'development':ps,
+            'unseen_schema':up,
+            'paired_P0_vs_P5':pair,
+            'P5_gate':dev['p6_gate'],
+            'forensics':{'development_findings':forensic['finding_count'],'unseen_findings':uforensic['finding_count']},
+            'conclusion':[
+              'The frozen P0-P5 benchmark is complete and analyzable; no paid LLM inference was used.',
+              'P5 does not meet the predefined 0.90 reliability target.',
+              'P5 is not a defensible improvement over P0 on paired official Spider execution accuracy.',
+              'Therefore the proposed P6 evidence-dependent policy is blocked under the preregistered gate.',
+              'The result should be reported as a negative empirical finding, not reframed as a positive contribution.',
+              'Next research work must explain the dominant failure modes before changing the policy hypothesis.'
+            ],
+            'methodological_boundary':'Official Spider execution accuracy remains primary; row-set equality is diagnostic only. No evaluator mismatch may be used to override the official metric.'
+          }
+          Path('artifacts/final/P1_CONCLUSION.json').write_text(json.dumps(conclusion,indent=2)+'\n')
+          print('=== P1 CONCLUSION ===')
+          print(json.dumps({'status':conclusion['status'],'development_n':dev['question_count'],'unseen_n':unseen['question_count'],'P0_accuracy':ps['P0']['official_execution_accuracy'],'P5_accuracy':ps['P5']['official_execution_accuracy'],'P5_vs_P0_delta':pair['accuracy_delta_b_minus_a'],'P5_vs_P0_exact_p':pair['exact_p'],'P5_gate':dev['p6_gate']['status'],'forensic_findings_dev':forensic['finding_count'],'forensic_findings_unseen':uforensic['finding_count']},indent=2))
+          PY
+
+      - name: Upload conclusive evidence bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: p1-conclusive-evidence-${{ github.run_id }}
+          path: artifacts/final/
+          retention-days: 30
