@@ -30,6 +30,9 @@ def load_p0(path: Path):
             f"P0 evaluation artifact contains {len(missing)} traces without explicit official_execution_correct; "
             "refusing to coerce missing values to False"
         )
+    keys = [(r["question"], r["db_id"]) for r in rows]
+    if len(keys) != len(set(keys)):
+        raise ValueError("P0 evaluation artifact contains duplicate case keys")
     return {(r["question"], r["db_id"]): r for r in rows}
 
 
@@ -89,16 +92,27 @@ def intervention(records, p6, p0):
         "harm": 0,
         "rescue": 0,
         "neutral": 0,
+        "decision_counts": {},
+        "outcome_counts": {},
     }
     for r in records:
-        if r.get("decision") != "INTERVENE":
+        if r.get("intervention") is not True:
             continue
         out["eligible"] += 1
+        decision = r.get("decision")
+        out["decision_counts"][decision] = out["decision_counts"].get(decision, 0) + 1
+        outcome = r.get("outcome_class")
+        out["outcome_counts"][outcome] = out["outcome_counts"].get(outcome, 0) + 1
+        if decision not in {"REJECT_CHALLENGER", "REPLACE"}:
+            raise ValueError(
+                f"Intervention record has invalid final decision {decision!r}; "
+                "expected REJECT_CHALLENGER or REPLACE"
+            )
         cid = r.get("case_id", "")
         db, q = cid.split(":", 1) if ":" in cid else (None, None)
         key = (q, db)
         if key not in p0 or key not in p6:
-            continue
+            raise ValueError(f"Intervention case missing from paired evidence: {cid}")
         pc = p0[key]["official_execution_correct"]
         cc = p6[key]["official_execution_correct"]
         if pc:
@@ -150,9 +164,14 @@ def main():
     p6_rows = p6_payload["traces"]
     if any(r.get("official_execution_correct") not in (True, False) for r in p6_rows):
         raise ValueError("P6 artifact contains missing official_execution_correct values")
+    p6_keys = [(r["question"], r["db_id"]) for r in p6_rows]
+    if len(p6_keys) != len(set(p6_keys)):
+        raise ValueError("P6 artifact contains duplicate case keys")
     p6 = {(r["question"], r["db_id"]): r for r in p6_rows}
     p0 = load_p0(args.p0)
     common = set(p6) & set(p0)
+    if len(common) != len(p6_rows):
+        raise ValueError(f"P6/P0 denominator mismatch: P6={len(p6_rows)} common={len(common)}")
     p6c = {k: p6[k] for k in common}
     p0c = {k: p0[k] for k in common}
     result = {
