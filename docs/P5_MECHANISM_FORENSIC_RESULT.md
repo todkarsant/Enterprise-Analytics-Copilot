@@ -1,81 +1,180 @@
-# P5 Mechanism Forensic Result — Frozen Evidence
+# P5 Mechanism Forensic Result — Clean P5R Evidence
 
 Date: 2026-09-08  
-Source run: `34206500727`  
+Clean challenger run: `34219674022`  
+Clean P5R head: `052468ac50df2c82eaeba351bbadbffdd8747a07`  
 Model/provider: `llama3.2:1b` / local Ollama  
-Status: diagnostic result; no new inference
+Status: diagnostic result; no new inference after the clean P5R rerun
 
 ## 1. Primary conclusion
 
-The frozen evidence is consistent with a **routing/selector failure interacting with a weak deterministic baseline**, not evidence that post-evidence escalation is intrinsically useful.
+The clean prospective P5R experiment separates two effects that were confounded in the original P5 result:
 
-P5 is substantially below P0 on official Spider execution correctness. The mechanism analysis therefore does not justify implementing P6 as a performance-recovery step.
+1. The **current deterministic evidence stage is not valid as a terminal correctness mechanism** under the official Spider execution evaluator.
+2. The **post-evidence state does contain predictive information** about downstream LLM success, but the current hand-built selector does not convert that information into a reliable preservation policy.
 
-## 2. Paired P0/P5 evidence
+P5R improves official execution accuracy over frozen P5, but it remains substantially below frozen P0 and is more expensive on mean cost. Therefore the evidence does **not** justify a P6 performance claim.
 
-Full 1,034 cases:
-- P0 correct: 254
-- P5 correct: 123
-- P0-only: 158
-- P5-only: 27
-- P5 − P0: −12.67 percentage points
+The detailed Gate A/B analysis is documented in `docs/P5_GATE_A_B_FORENSIC_ANALYSIS.md`.
 
-The frozen review reports an exact paired McNemar result on the discordant pairs at approximately p = 1e-23, strongly rejecting the hypothesis that the observed P0/P5 disagreement is symmetric.
+## 2. Frozen P0/P5 baseline and clean P5R
 
-Schema-disjoint partition:
-- 780 cases across 16 non-holdout schemas: P0 193/780 (24.74%), P5 91/780 (11.67%).
-- 254 cases across four held-out schemas: P0 60/254 (23.62%), P5 32/254 (12.60%).
+Full 1,034-case development workload:
 
-The holdout result must be interpreted conditionally on the fact that the four schemas were also present in the full 1,034-case artifact. The defensible split is 16 schemas development / 4 schemas holdout, provided those holdout schemas were not used for policy tuning.
+| Policy | Official correct | Accuracy | Mean cost |
+|---|---:|---:|---:|
+| P0 | 254/1,034 | 24.56% | 0.26908 |
+| P5 | 123/1,034 | 11.90% | 0.24393 |
+| P5R | 179/1,034 | 17.31% | 0.29788 |
 
-## 3. Escalation selector signal
+P5R vs P5:
+- both correct: 83
+- P5-only: 40
+- P5R-only: 96
+- accuracy delta: **+5.42 percentage points**
+- exact McNemar p = **1.74e-06**
+- paired mean cost delta P5R − P5 = **+0.05396**
 
-P5 has 541 escalated cases and 493 non-escalated cases.
+P5R vs P0:
+- both correct: 142
+- P0-only: 112
+- P5R-only: 37
+- accuracy delta: **−7.25 percentage points**
+- exact McNemar p = **5.79e-10**
+- paired mean cost delta P5R − P0 = **+0.02880**
 
-The 493 non-escalated cases contain **zero P5 official-correct cases**. P0 nevertheless has 142 correct cases within this same group. Therefore the observed non-escalation decision is not a sufficient correctness proxy.
+Thus the challenger recovers a substantial portion of the P5 accuracy loss but does not recover P0 performance and does not preserve P5's cost advantage.
 
-Among escalated cases, P5 has 123 correct cases. Relative to P0 on those cases:
-- both correct: 96
-- P5 rescue of P0 failure: 27
-- P5 destruction of P0 success: 16
+## 3. Schema-disjoint evaluation
 
-Thus escalation provides some rescue, but its gross benefit is overwhelmed by P5 failures elsewhere and by a lack of preservation guarantees.
+The defensible reporting split is:
 
-## 4. Deterministic baseline limitation
+- 780 cases across 16 non-holdout schemas: development partition.
+- 254 cases across four held-out schemas: unseen-schema partition.
 
-The deterministic solver is explicitly described as conservative and limited to direct/single-table aggregate/order patterns. This means P5's first-stage behavior is not a general SQL reasoner. P5 can therefore inherit deterministic failures before its heuristic evidence trigger has a chance to identify the relevant semantic defect.
+The four holdout schemas were also present in the complete 1,034-case artifact; therefore the full artifact must not be described as an independent test set. The holdout is a schema-disjoint evaluation only when policy/model decisions were frozen without using those schemas or their outcomes.
 
-This is a key confounder: a poor deterministic baseline can make evidence-trigger design look worse than the routing concept itself. The current evidence does not permit the stronger causal claim that evidence-based routing is fundamentally invalid.
+Holdout results:
 
-## 5. Selector design limitation
+| Policy | Official correct | Accuracy | Mean cost |
+|---|---:|---:|---:|
+| P0 | 60/254 | 23.62% | 0.26941 |
+| P5 | 32/254 | 12.60% | 0.25000 |
+| P5R | 41/254 | 16.14% | 0.28051 |
 
-`needs_post_evidence_escalation()` relies on lexical structural cues, result cardinality, and checks for whether generated SQL contains constructs such as WHERE/JOIN/GROUP BY/ORDER BY. It is a hand-built heuristic rather than a calibrated probability of downstream correction.
+P5R vs P0:
+- P0-only: 34
+- P5R-only: 15
+- accuracy delta: **−7.48 pp**
+- exact McNemar p = **0.00940**
 
-The P4 confidence value is also heuristic rather than empirically calibrated, and P2/P3 share the same complexity threshold in the current implementation. These facts limit the strength of any claim that the experiment compared distinct, independently calibrated routing policies.
+P5R vs P5:
+- P5-only: 17
+- P5R-only: 26
+- accuracy delta: **+3.54 pp**
+- exact McNemar p = **0.222**
 
-## 6. Preservation failure
+The holdout therefore confirms the direction of the P5R vs P0 degradation and does not provide evidence of a robust P5R advantage over P5.
 
-P5 overwrites the deterministic SQL with the escalated SQL whenever escalation occurs. The frozen implementation has no general 'preserve incumbent if confidence/evidence does not establish improvement' gate. The paired outcomes show 16 P0 successes becoming P5 failures among escalated cases.
+## 4. Gate A — deterministic evidence-only termination
 
-This is an actionable mechanism hypothesis for prospective work: **escalation should be challenger generation, not unconditional replacement**.
+P5R non-escalated cases terminate after deterministic evidence without an LLM call.
 
-## 7. What can and cannot be claimed
+Development:
+- n = 352
+- P5R official correctness = **0/352 (0%)**
+- P0 correctness within the same cases = **89/352 (25.28%)**
+- 89/254 P0-correct cases are therefore lost by the current non-escalation decision.
 
-Supported:
-- P5 is substantially worse than P0 on the frozen workload.
-- P5 saves measured cost and average LLM usage relative to P0.
-- The selector misses many cases where downstream LLM generation could be relevant.
-- Escalation can rescue some P0 failures but can also destroy correct deterministic outputs.
-- Deterministic-solver scope and selector heuristics are major experimental limitations.
+Holdout:
+- n = 108
+- P5R official correctness = **0/108 (0%)**
+- P0 correctness within the same cases = **33/108 (30.56%)**
+- 33/60 P0-correct holdout cases are therefore lost by the current non-escalation decision.
 
-Not supported:
-- That a better selector would achieve 90% reliability.
-- That a preservation gate would improve accuracy, because no prospective generation has been performed for the altered policy.
-- That the failure proves all evidence-based routing is invalid.
-- That the four-schema holdout is an untouched independent test if its schemas were used during development/tuning.
+The frozen P1 deterministic-only baseline also has 0 official-correct cases on the full 1,034-case workload.
 
-## 8. Implementation gate
+### Gate A decision: FAIL for the current implementation
 
-A prospective P6 is permitted only if it is first specified and frozen on the 16-schema development partition, with no use of holdout outcomes. The candidate should treat deterministic SQL as an incumbent and LLM output as a challenger, and require an explicit acceptance rule before replacement.
+The evidence supports the narrow conclusion that **the current deterministic evidence result cannot be accepted as the final analytical answer**. It may still be useful as an intermediate feature or candidate generator.
 
-The acceptance rule must be evaluated prospectively on held-out schemas; counterfactual replay of frozen outputs is diagnostic only and cannot establish correctness of newly generated SQL.
+This does not establish that all deterministic evidence is intrinsically useless; it establishes that this implementation cannot serve as a correctness-preserving terminal action.
+
+## 5. Gate B — evidence-state predictive signal
+
+A diagnostic model was fit using only label-free P5R post-evidence features, with frozen P0 official correctness as the downstream-success target. The model was not used to modify P5R and was not used to tune the holdout.
+
+Using `reason + evidence_row_count + evidence_column_count`:
+
+Development, 5-fold stratified cross-validation:
+- ROC-AUC = **0.696**
+- average precision = **0.388**
+- Brier score = **0.218**
+
+Fit on the 780-case development partition and evaluated once on the untouched 254-case holdout:
+- ROC-AUC = **0.791**
+- bootstrap 95% CI = **[0.731, 0.846]**
+- average precision = **0.510**
+- Brier score = **0.191**
+
+Adding execution/generation status and the escalation flag produced development cross-validation ROC-AUC **0.717**, but the simpler evidence-state model is preferred for interpretation because it more directly tests the post-evidence information content.
+
+### Gate B decision: PASS as a diagnostic signal, not as a deployable selector
+
+The result indicates that post-evidence state is not information-free. However, predictive ranking is not a reliability guarantee, and the current hand-built selector is not calibrated to the research reliability targets.
+
+## 6. Selector preservation failure
+
+Development P5R:
+- non-escalation: 352 cases, 0 P5R-correct, 89 P0-correct;
+- escalation: 682 cases, 179 P5R-correct, 165 P0-correct.
+
+Among P5R escalations, the challenger can rescue cases that P0 misses, but it can also replace a correct incumbent with an incorrect challenger. Overall P5R has 37 rescues of P0 failures and 112 losses of P0 successes.
+
+The clean P5R evidence therefore supports a more precise mechanism diagnosis than the original frozen P5 result: **the problem is not simply absence of signal; it is failure to translate the signal into a correctness-preserving action policy.**
+
+## 7. Evidence-reason heterogeneity
+
+Development P0 correctness by P5R evidence reason:
+
+| Reason | n | P0 correctness |
+|---|---:|---:|
+| requested_name_not_projected | 172 | 26.74% |
+| question_predicate_not_reflected | 160 | 23.13% |
+| extremum_not_reflected | 102 | 16.67% |
+| grouping_not_reflected | 91 | 10.99% |
+| aggregation_not_reflected | 65 | 15.38% |
+| literal_predicate_not_reflected | 62 | 46.77% |
+| ordering_not_reflected | 30 | 53.33% |
+
+Reason category is associated with P0 correctness on development data (chi-square p = **2.48e-08**). The category rates shift substantially on holdout, so the categories should not be treated as calibrated probabilities.
+
+## 8. What this means for the original research question
+
+The original research question remains unchanged: whether evidence-dependent analytical action selection can select a lower-cost sufficient action while satisfying a predefined reliability target, outperforming fixed strategies and strong post-evidence cascade baselines.
+
+The current evidence now supports this mechanism tree:
+
+- **P5 is cheaper than P0 but much less reliable.**
+- **P5R improves P5 accuracy, indicating that selector/mechanism design contributes to the failure.**
+- **P5R still loses to P0 and is more expensive than P0, so the broader evidence-dependent hypothesis is not yet supported.**
+- **The current deterministic terminal action fails Gate A.**
+- **Post-evidence features pass a limited diagnostic information test (Gate B), but the current selector does not provide reliability preservation.**
+
+## 9. P6 gate remains blocked
+
+No P6 claim is made from P5R.
+
+A future P6 is justified only if a policy is first specified and frozen on the 16-schema development partition, with no use of holdout outcomes, and then prospectively evaluated on the four held-out schemas.
+
+Any such policy must predeclare:
+
+- the action-selection rule;
+- the acceptance/replacement rule;
+- the reliability target and confidence interval criterion;
+- cost accounting;
+- timeout/error treatment;
+- preservation and rescue metrics;
+- ablations that distinguish evidence value from selector value.
+
+If these conditions do not yield a defensible reliability-constrained advantage, the correct research contribution is an empirical boundary/failure-mode result rather than a forced positive routing claim.
