@@ -31,6 +31,16 @@ def test_strict_selector_accepts_structurally_consistent_query():
     assert reason is None
 
 
+def test_strict_selector_ignores_english_contractions():
+    escalate, reason = assess_strict_evidence(
+        "What is the singer's name?",
+        'SELECT Name FROM singer',
+        1,
+    )
+    assert escalate is False
+    assert reason is None
+
+
 def test_strict_selector_has_no_label_dependency():
     # The public function accepts only observable execution-time evidence.
     assert assess_strict_evidence.__code__.co_argcount == 3
