@@ -65,11 +65,13 @@ On the disjoint 780-case development partition:
 
 On the 254-case held-out schema partition:
 
-- P0: 61/254 = 24.02%
+- P0: **60/254 = 23.62%**
 - P5: 32/254 = 12.60%
 - P0-only: 38
-- P5-only: 9
-- Accuracy delta: −11.42 percentage points.
+- P5-only: **10**
+- Accuracy delta: **−11.02 percentage points**.
+
+**Correction:** an earlier version reported 61 P0-correct holdout cases and 9 P5-only cases. Direct recomputation from the frozen raw traces gives 60 and 10 respectively. The corrected values above are authoritative.
 
 Thus P5 is not merely failing to improve P0; it materially regresses against the mandatory strongest comparator on both partitions.
 
@@ -96,7 +98,8 @@ The next research work should therefore be:
 2. formalize the disjoint 16-schema/4-schema interpretation;
 3. verify whether any P0–P5 policy parameter or threshold was tuned using the four held-out schemas;
 4. perform publication-grade paired statistics, confidence intervals, cost/latency effect sizes, timeout sensitivity, and failure taxonomy;
-5. decide whether a prospective P6 has a scientifically defensible unresolved gap rather than a performance-recovery motivation;
-6. if no defensible gap remains, reframe the contribution around the empirical boundary/failure modes rather than forcing a positive adaptive-routing claim.
+5. use the clean P5R mechanism-forensics result to distinguish current evidence-stage failure from selector failure;
+6. decide whether a prospective P6 has a scientifically defensible unresolved gap rather than a performance-recovery motivation;
+7. if no defensible gap remains, reframe the contribution around the empirical boundary/failure modes rather than forcing a positive adaptive-routing claim.
 
-No new inference run is required at this stage.
+No additional inference run is required solely to correct the holdout arithmetic.
