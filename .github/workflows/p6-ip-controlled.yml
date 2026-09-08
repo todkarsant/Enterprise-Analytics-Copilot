@@ -1,9 +1,6 @@
 name: P6-IP Controlled Experiment
 
 on:
-  push:
-    branches:
-      - research/p6-ip-defensibility
   workflow_dispatch:
 
 concurrency:
