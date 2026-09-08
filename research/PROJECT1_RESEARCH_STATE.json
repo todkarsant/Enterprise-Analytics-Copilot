@@ -1,15 +1,16 @@
 {
   "project": "Project 1 - Enterprise Analytics Copilot",
   "experiment": "P6-IP",
-  "state": "REPAIR_REQUIRED",
-  "previous_state": "ARTIFACT_VALIDATED",
+  "state": "REPAIR_COMMITTED",
+  "previous_state": "REPAIR_REQUIRED",
   "design_ref": "docs/PROJECT1_P6_IP_DESIGN.md",
   "implementation_ref": "research/p6_ip_runner.py",
   "ci_run": "34252265013",
   "execution_run": "34252265013",
   "artifact_manifest": "p6-ip-final-analysis-34252265013",
-  "repair_reason": "Frozen P0 case-level official correctness labels are incomplete/invalid for case-level pairing; recompute from existing SQL with the pinned official evaluator before any P0-versus-P6 scientific conclusion.",
+  "repair_reason": "Frozen P0 case-level official correctness labels were incomplete/invalid for case-level pairing; recompute from existing SQL with the pinned official evaluator before any P0-versus-P6 scientific conclusion.",
+  "repair_commit": "8b93b99d33839370e22bb60f52b73d20bf727a6b",
   "inference_rerun_authorized": false,
   "holdout_tuning_allowed": false,
-  "last_transition_reason": "Scientific comparison is blocked until comparator integrity is repaired and revalidated."
+  "last_transition_reason": "Comparator repair was committed and corrected P0 official correctness artifacts were produced without rerunning LLM inference."
 }
