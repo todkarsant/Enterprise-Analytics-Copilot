@@ -11,7 +11,7 @@ from pathlib import Path
 
 from app.services.llm import AzureOpenAIProvider, OllamaProvider
 from research.deterministic_solver import RuleBasedDeterministicSolver
-from research.defensibility import DefensibilityTrace
+from research.defensibility import DefensibilityTrace, validate_trace
 from research.p5_selector import assess_strict_evidence
 from research.p6_ip import decide_replacement, verify_challenger
 from research.spider_benchmark import BenchmarkEnvironment, Example, SecondaryExecutionEvaluator, SpiderDataset, Trace
@@ -34,7 +34,6 @@ def build_environment(questions: Path, database_dir: Path):
 def run_case(env: BenchmarkEnvironment, example: Example) -> tuple[Trace, dict]:
     started = time.perf_counter()
     incumbent = env.run(example, "P0")
-    # Decision-time evidence is restricted to the incumbent execution trace.
     eligible, reason = assess_strict_evidence(example.question, incumbent.generated_sql or "", incumbent.evidence_row_count)
     record = DefensibilityTrace(
         case_id=f"{example.db_id}:{example.question}",
@@ -52,9 +51,9 @@ def run_case(env: BenchmarkEnvironment, example: Example) -> tuple[Trace, dict]:
         record.verification = {"passed": False, "not_run": True}
         incumbent.termination_reason = "p6_keep_incumbent"
         incumbent.latency_ms = (time.perf_counter() - started) * 1000
+        validate_trace(record)
         return incumbent, record.to_dict()
 
-    # Challenger generation is deliberately separated from the incumbent decision.
     challenger = Trace(example.question, example.db_id, POLICY)
     schema = env.dataset.schema(example.db_id)
     env._run_p5(challenger, example, schema, strict=False)
@@ -64,22 +63,17 @@ def run_case(env: BenchmarkEnvironment, example: Example) -> tuple[Trace, dict]:
     record.decision = decision
     record.replacement = decision == "REPLACE"
 
-    # Preserve incumbent unless every verification gate passes.
     selected = challenger if decision == "REPLACE" else incumbent
     selected.policy = POLICY
     selected.actions = ["incumbent:P0", "risk_assessment", "INTERVENE"] + [f"challenger:{a}" for a in challenger.actions]
-    if decision == "REPLACE":
-        record.outcome_class = "REPLACE_CHALLENGER"
-        selected.termination_reason = "p6_replace_after_verification"
-    else:
-        record.outcome_class = "PRESERVE_INCUMBENT"
-        selected.termination_reason = "p6_preserve_incumbent"
-    # Account for the full decision path, including challenger work even when rejected.
+    record.outcome_class = "REPLACE_CHALLENGER" if decision == "REPLACE" else "PRESERVE_INCUMBENT"
+    selected.termination_reason = "p6_replace_after_verification" if decision == "REPLACE" else "p6_preserve_incumbent"
     selected.cost = incumbent.cost + challenger.cost
     selected.llm_calls = incumbent.llm_calls + challenger.llm_calls
     selected.input_tokens = incumbent.input_tokens + challenger.input_tokens
     selected.output_tokens = incumbent.output_tokens + challenger.output_tokens
     selected.latency_ms = (time.perf_counter() - started) * 1000
+    validate_trace(record)
     return selected, record.to_dict()
 
 
@@ -105,7 +99,8 @@ def run_isolated(questions: Path, database_dir: Path, example: Example, timeout_
         return trace, {"case_id": f"{example.db_id}:{example.question}", "policy": POLICY, "decision": "KEEP", "outcome_class": "RUNTIME_FAILURE"}
     try:
         payload = json.loads((completed.stdout or "").strip().splitlines()[-1])
-        trace = Trace(**payload["trace"]); trace.latency_ms = max(trace.latency_ms, elapsed)
+        trace = Trace(**payload["trace"])
+        trace.latency_ms = max(trace.latency_ms, elapsed)
         return trace, payload["defensibility"]
     except Exception as exc:
         trace = Trace(example.question, example.db_id, POLICY, latency_ms=elapsed, termination_reason="worker_protocol_error", error=f"invalid_worker_output: {exc}")
@@ -117,6 +112,8 @@ def main():
     ap.add_argument("--worker", action="store_true")
     ap.add_argument("--questions", type=Path, required=True)
     ap.add_argument("--database-dir", type=Path, required=True)
+    ap.add_argument("--question")
+    ap.add_argument("--db-id")
     ap.add_argument("--spider-eval-dir", type=Path)
     ap.add_argument("--tables-file", type=Path)
     ap.add_argument("--output", type=Path)
@@ -127,20 +124,19 @@ def main():
     if args.worker:
         if not all((args.question, args.db_id)):
             raise SystemExit("worker requires --question and --db-id")
-        isolated_worker(args); return
+        isolated_worker(args)
+        return
     dataset, _ = build_environment(args.questions, args.database_dir)
     examples = dataset.examples[:args.limit] if args.limit else dataset.examples
-    traces = []
-    records = []
-    done = set()
+    traces, records, done = [], [], set()
     if args.checkpoint and args.checkpoint.exists():
         payload = json.loads(args.checkpoint.read_text(encoding="utf-8")); traces = payload.get("traces", []); records = payload.get("defensibility", []); done = {(r.get("question"), r.get("db_id")) for r in traces}
     for index, example in enumerate(examples):
-        if (example.question, example.db_id) in done: continue
+        if (example.question, example.db_id) in done:
+            continue
         print(f"CASE {index + 1}/{len(examples)} db={example.db_id}", flush=True)
         trace, record = run_isolated(args.questions, args.database_dir, example, args.policy_timeout_seconds)
-        traces.append(asdict(trace)); records.append(record)
-        done.add((example.question, example.db_id))
+        traces.append(asdict(trace)); records.append(record); done.add((example.question, example.db_id))
         if args.checkpoint:
             args.checkpoint.parent.mkdir(parents=True, exist_ok=True)
             args.checkpoint.write_text(json.dumps({"traces": traces, "defensibility": records}, indent=2) + "\n", encoding="utf-8")
@@ -152,4 +148,5 @@ def main():
     print(json.dumps({"traces": len(traces), "defensibility_records": len(records)}, indent=2))
 
 
-if __name__ == "__main__": main()
+if __name__ == "__main__":
+    main()
