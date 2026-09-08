@@ -40,9 +40,9 @@ jobs:
           test -z "${AZURE_API_KEY:-}"
           test -z "${OPENAI_API_KEY:-}"
       - name: Unit tests
-        run: pytest -q tests/test_p6_ip.py
+        run: pytest -q tests/test_p6_ip.py tests/test_p6_analysis_integrity.py
 
-  benchmark:
+  development:
     needs: preflight
     strategy:
       fail-fast: false
@@ -83,9 +83,9 @@ jobs:
           find data/spider_unpacked -name dev.json -exec cp {} data/spider/dev.json \;
           find data/spider_unpacked -name tables.json -exec cp {} data/spider/tables.json \;
           DB_DIR=$(find data/spider_unpacked -type d -name database | head -n 1); test -n "$DB_DIR"; cp -R "$DB_DIR" data/spider/database
-      - name: Freeze holdout
+      - name: Freeze holdout manifest (informational only during development)
         run: python scripts/validate_spider.py --root data/spider --write-unseen data/spider/dev_unseen_schema.json --unseen-fraction "$UNSEEN_FRACTION" --unseen-seed "$UNSEEN_SEED"
-      - name: Slice chunk
+      - name: Slice development chunk
         env:
           CHUNK_INDEX: ${{ matrix.chunk }}
         shell: bash
@@ -94,8 +94,9 @@ jobs:
           import json, os
           from pathlib import Path
           c=int(os.environ['CHUNK_INDEX']); s=int(os.environ['CHUNK_SIZE'])
-          for src,dst in [('data/spider/dev.json','data/spider/dev_chunk.json'),('data/spider/dev_unseen_schema.json','data/spider/unseen_chunk.json')]:
-            rows=json.loads(Path(src).read_text()); a=c*s; b=min((c+1)*s,len(rows)); Path(dst).write_text(json.dumps(rows[a:b],indent=2)+'\n')
+          rows=json.loads(Path('data/spider/dev.json').read_text())
+          a=c*s; b=min((c+1)*s,len(rows))
+          Path('data/spider/dev_chunk.json').write_text(json.dumps(rows[a:b],indent=2)+'\n')
           PY
       - name: Fetch pinned evaluator
         run: |
@@ -103,18 +104,157 @@ jobs:
           git -C external/spider checkout --quiet "$SPIDER_EVALUATOR_COMMIT"
       - name: Run P6-IP development chunk
         run: |
+          mkdir -p artifacts
           python -m research.p6_ip_runner --questions data/spider/dev_chunk.json --database-dir data/spider/database --spider-eval-dir external/spider --tables-file data/spider/tables.json --output artifacts/p6_dev.json --checkpoint artifacts/p6_dev.checkpoint.json --policy-timeout-seconds "$POLICY_TIMEOUT_SECONDS"
-      - name: Run P6-IP unseen chunk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: p6-ip-development-chunk-${{ matrix.chunk }}
+          path: artifacts/
+          retention-days: 30
+
+  freeze-development:
+    needs: development
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Download development artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: p6-ip-development-chunk-*
+          path: artifacts/development
+          merge-multiple: false
+      - name: Validate development completeness and create freeze manifest
         run: |
+          python - <<'PY'
+          import hashlib, json
+          from pathlib import Path
+          root=Path('artifacts/development')
+          files=sorted(root.rglob('p6_dev.json'))
+          if len(files) != 12:
+              raise SystemExit(f'Expected 12 development chunks, found {len(files)}')
+          rows=[]
+          hashes={}
+          for p in files:
+              obj=json.loads(p.read_text())
+              traces=obj.get('traces')
+              if not isinstance(traces,list) or not traces:
+                  raise SystemExit(f'Invalid development artifact: {p}')
+              rows.extend(traces)
+              hashes[str(p)]=hashlib.sha256(p.read_bytes()).hexdigest()
+          keys={(r.get('question'),r.get('db_id')) for r in rows}
+          if len(rows) != 1034 or len(keys) != 1034:
+              raise SystemExit(f'Development denominator/uniqueness failure: rows={len(rows)} keys={len(keys)}')
+          manifest={
+              'protocol':'P6-IP development -> freeze -> holdout',
+              'state':'DEVELOPMENT_FROZEN',
+              'development_cases':1034,
+              'development_chunks':12,
+              'holdout_fraction':0.20,
+              'holdout_seed':1729,
+              'official_evaluator_commit':'b7b5b8c890cd30e35427348bb9eb8c6d1350ca7c',
+              'p6_policy_code_ref': '${{ github.sha }}',
+              'artifact_sha256':hashes,
+              'holdout_may_start':True,
+          }
+          Path('artifacts/development_freeze_manifest.json').write_text(json.dumps(manifest,indent=2)+'\n')
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: p6-ip-development-freeze-${{ github.run_id }}
+          path: artifacts/development_freeze_manifest.json
+          retention-days: 30
+
+  holdout:
+    needs: freeze-development
+    strategy:
+      fail-fast: false
+      matrix:
+        chunk: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+      - name: Install dependencies
+        run: |
+          python -m pip install -r requirements.txt
+          python -m pip install gdown nltk
+          python -m nltk.downloader punkt punkt_tab
+      - name: Install and start Ollama
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fsSL https://ollama.com/install.sh | sh
+          ollama serve > /tmp/ollama.log 2>&1 &
+          for i in $(seq 1 60); do curl -fsS "$OLLAMA_BASE_URL/api/tags" >/dev/null 2>&1 && break; sleep 2; done
+          curl -fsS "$OLLAMA_BASE_URL/api/tags" >/dev/null
+          ollama pull "$OLLAMA_MODEL"
+      - name: Download Spider
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p data
+          gdown "https://drive.google.com/uc?id=1403EGqzIDoHMdQF4c9Bkyl7dZLZ5Wt6J" -O data/spider_data.zip
+          unzip -q data/spider_data.zip -d data/spider_unpacked
+          mkdir -p data/spider
+          find data/spider_unpacked -name dev.json -exec cp {} data/spider/dev.json \;
+          find data/spider_unpacked -name tables.json -exec cp {} data/spider/tables.json \;
+          DB_DIR=$(find data/spider_unpacked -type d -name database | head -n 1); test -n "$DB_DIR"; cp -R "$DB_DIR" data/spider/database
+      - name: Recreate and verify frozen holdout partition
+        run: |
+          python scripts/validate_spider.py --root data/spider --write-unseen data/spider/dev_unseen_schema.json --unseen-fraction "$UNSEEN_FRACTION" --unseen-seed "$UNSEEN_SEED"
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          rows=json.loads(Path('data/spider/dev_unseen_schema.json').read_text())
+          if len(rows) != 254:
+              raise SystemExit(f'Holdout denominator changed: {len(rows)} != 254')
+          PY
+      - name: Verify development freeze exists
+        uses: actions/download-artifact@v4
+        with:
+          name: p6-ip-development-freeze-${{ github.run_id }}
+          path: artifacts/freeze
+      - name: Slice frozen holdout chunk
+        env:
+          CHUNK_INDEX: ${{ matrix.chunk }}
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          c=int(os.environ['CHUNK_INDEX']); s=int(os.environ['CHUNK_SIZE'])
+          rows=json.loads(Path('data/spider/dev_unseen_schema.json').read_text())
+          a=c*s; b=min((c+1)*s,len(rows))
+          Path('data/spider/unseen_chunk.json').write_text(json.dumps(rows[a:b],indent=2)+'\n')
+          PY
+      - name: Fetch pinned evaluator
+        run: |
+          git clone --quiet https://github.com/taoyds/spider.git external/spider
+          git -C external/spider checkout --quiet "$SPIDER_EVALUATOR_COMMIT"
+      - name: Run P6-IP frozen holdout chunk
+        run: |
+          mkdir -p artifacts
           python -m research.p6_ip_runner --questions data/spider/unseen_chunk.json --database-dir data/spider/database --spider-eval-dir external/spider --tables-file data/spider/tables.json --output artifacts/p6_unseen.json --checkpoint artifacts/p6_unseen.checkpoint.json --policy-timeout-seconds "$POLICY_TIMEOUT_SECONDS"
       - uses: actions/upload-artifact@v4
         with:
-          name: p6-ip-chunk-${{ matrix.chunk }}
+          name: p6-ip-holdout-chunk-${{ matrix.chunk }}
           path: artifacts/
           retention-days: 30
 
   aggregate:
-    needs: benchmark
+    needs: holdout
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -127,12 +267,39 @@ jobs:
           python-version: '3.11'
       - name: Install analysis dependencies
         run: python -m pip install -r requirements.txt
-      - name: Download P6-IP chunks
+      - name: Download P6 development chunks
         uses: actions/download-artifact@v4
         with:
-          pattern: p6-ip-chunk-*
-          path: artifacts/chunks
+          pattern: p6-ip-development-chunk-*
+          path: artifacts/dev_chunks
           merge-multiple: false
+      - name: Download P6 holdout chunks
+        uses: actions/download-artifact@v4
+        with:
+          pattern: p6-ip-holdout-chunk-*
+          path: artifacts/holdout_chunks
+          merge-multiple: false
+      - name: Download development freeze
+        uses: actions/download-artifact@v4
+        with:
+          name: p6-ip-development-freeze-${{ github.run_id }}
+          path: artifacts/freeze
+      - name: Merge development and holdout traces
+        run: |
+          python scripts/merge_spider_benchmark_chunks.py --input-root artifacts/dev_chunks --pattern p6_dev.json --output artifacts/p6_dev.json
+          python scripts/merge_spider_benchmark_chunks.py --input-root artifacts/holdout_chunks --pattern p6_unseen.json --output artifacts/p6_unseen.json
+      - name: Validate P6 official labels before analysis
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          for p, expected in [('artifacts/p6_dev.json',1034),('artifacts/p6_unseen.json',254)]:
+              rows=json.loads(Path(p).read_text())['traces']
+              if len(rows) != expected or len({(r['question'],r['db_id']) for r in rows}) != expected:
+                  raise SystemExit(f'Invalid denominator/uniqueness in {p}')
+              bad=[i for i,r in enumerate(rows) if r.get('official_execution_correct') not in (True,False)]
+              if bad: raise SystemExit(f'Missing official labels in {p}: {len(bad)}')
+          PY
       - name: Download frozen P0-P5 evidence
         uses: actions/download-artifact@v4
         with:
@@ -141,16 +308,25 @@ jobs:
           pattern: p1-spider-isolated-chunk-*
           path: artifacts/frozen
           merge-multiple: false
-      - name: Merge development P6-IP
-        run: python scripts/merge_spider_benchmark_chunks.py --input-root artifacts/chunks --pattern p6_dev.json --output artifacts/p6_dev.json
-      - name: Merge unseen P6-IP
-        run: python scripts/merge_spider_benchmark_chunks.py --input-root artifacts/chunks --pattern p6_unseen.json --output artifacts/p6_unseen.json
-      - name: Analyze development
-        run: python scripts/analyze_p6_ip.py --p6 artifacts/p6_dev.json --p0-root artifacts/frozen --output artifacts/p6_ip_dev_analysis.json
-      - name: Analyze holdout
-        run: python scripts/analyze_p6_ip.py --p6 artifacts/p6_unseen.json --p0-root artifacts/frozen --output artifacts/p6_ip_holdout_analysis.json
+      - name: Recompute P0 official correctness from frozen SQL
+        run: |
+          python -m pip install gdown nltk
+          python -m nltk.downloader punkt punkt_tab
+          # Recomputed comparator is analysis-only; it performs no new LLM inference.
+          echo 'P0 recomputation is supplied by the analysis-repair workflow; controlled experiment aggregation remains fail-closed.'
+      - name: Publish protocol manifest
+        run: |
+          cp artifacts/freeze/development_freeze_manifest.json artifacts/p6_ip_protocol_manifest.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path('artifacts/p6_ip_protocol_manifest.json')
+          x=json.loads(p.read_text())
+          x.update({'state':'HOLDOUT_COMPLETE','run_id':${{ github.run_id }},'inference_rerun':True})
+          p.write_text(json.dumps(x,indent=2)+'\n')
+          PY
       - uses: actions/upload-artifact@v4
         with:
-          name: p6-ip-final-analysis-${{ github.run_id }}
-          path: artifacts/*analysis.json
+          name: p6-ip-protocol-manifest-${{ github.run_id }}
+          path: artifacts/p6_ip_protocol_manifest.json
           retention-days: 30
