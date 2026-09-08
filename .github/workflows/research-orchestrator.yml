@@ -44,7 +44,8 @@ env:
   UNSEEN_FRACTION: '0.20'
   UNSEEN_SEED: '1729'
   SPIDER_EVALUATOR_COMMIT: b7b5b8c890cd30e35427348bb9eb8c6d1350ca7c
-  CHUNK_SIZE: '180'
+  # Runtime-only partitioning. Dataset, split, policies and evaluator are unchanged.
+  CHUNK_SIZE: '90'
 
 jobs:
   preflight:
@@ -62,8 +63,7 @@ jobs:
         with:
           python-version: '3.11'
           cache: pip
-      - name: Install test dependencies
-        run: python -m pip install -r requirements.txt
+      - run: python -m pip install -r requirements.txt
       - name: Confirm immutable research contract
         shell: bash
         run: |
@@ -82,7 +82,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        chunk: [0, 1, 2, 3, 4, 5]
+        chunk: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
     runs-on: ubuntu-latest
     timeout-minutes: 350
     permissions:
@@ -141,9 +141,9 @@ jobs:
               rows=json.loads(Path(src).read_text())
               if limit: rows=rows[:int(limit)]
               a=chunk*size; b=min((chunk+1)*size,len(rows))
-              Path(dst).write_text(json.dumps(rows[a:b],indent=2)+'\n')
-              print(src,a,b,b-a)
-          PY
+              selected=rows[a:b] if a < len(rows) else []
+              Path(dst).write_text(json.dumps(selected,indent=2)+'\n')
+              print(src,a,b,len(selected))
       - name: Fetch pinned official Spider evaluator
         run: |
           git clone --quiet https://github.com/taoyds/spider.git external/spider
