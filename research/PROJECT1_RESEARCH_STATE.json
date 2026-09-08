@@ -1,8 +1,8 @@
 {
   "project": "Project 1 - Enterprise Analytics Copilot",
   "experiment": "P6-IP",
-  "state": "ARTIFACT_VALIDATED",
-  "previous_state": "REPAIR_COMMITTED",
+  "state": "ANALYZED",
+  "previous_state": "ARTIFACT_VALIDATED",
   "design_ref": "docs/PROJECT1_P6_IP_DESIGN.md",
   "implementation_ref": "research/p6_ip_runner.py",
   "ci_run": "34252265013",
@@ -13,5 +13,5 @@
   "analysis_artifact": "p6_ip_corrected_dev_analysis.json; p6_ip_corrected_holdout_analysis.json",
   "inference_rerun_authorized": false,
   "holdout_tuning_allowed": false,
-  "last_transition_reason": "Corrected P0 case-level official correctness artifacts were validated; no inference was rerun."
+  "last_transition_reason": "Corrected P0/P6 paired analysis and intervention harm/rescue analysis are complete."
 }
