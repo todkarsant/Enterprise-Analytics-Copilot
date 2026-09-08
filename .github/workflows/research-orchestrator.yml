@@ -44,7 +44,7 @@ env:
   UNSEEN_FRACTION: '0.20'
   UNSEEN_SEED: '1729'
   SPIDER_EVALUATOR_COMMIT: b7b5b8c890cd30e35427348bb9eb8c6d1350ca7c
-  # Runtime-only partitioning. Dataset, split, policies and evaluator are unchanged.
+  # Runtime-only partitioning: dataset, split, policies and evaluator unchanged.
   CHUNK_SIZE: '90'
 
 jobs:
@@ -82,6 +82,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        # 1034 dev cases / 90 => 12 chunks (last chunk is partial).
         chunk: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
     runs-on: ubuntu-latest
     timeout-minutes: 350
@@ -143,7 +144,7 @@ jobs:
               a=chunk*size; b=min((chunk+1)*size,len(rows))
               selected=rows[a:b] if a < len(rows) else []
               Path(dst).write_text(json.dumps(selected,indent=2)+'\n')
-              print(src,a,b,len(selected))
+              print(f'{src}: {a}:{b} -> {len(selected)} cases')
       - name: Fetch pinned official Spider evaluator
         run: |
           git clone --quiet https://github.com/taoyds/spider.git external/spider
