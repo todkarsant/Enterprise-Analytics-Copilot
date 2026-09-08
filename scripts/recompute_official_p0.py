@@ -3,23 +3,40 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import re
 from pathlib import Path
 from typing import Any
 
 from research.spider_official_eval import OfficialSpiderExecutionEvaluator
 
 
+RESULT_FILENAMES = {"p0_p5_dev.json", "p0_p5_unseen.json"}
+
+
+def _chunk_key(path: Path) -> tuple[int, str]:
+    match = re.search(r"chunk-(\d+)", str(path))
+    return (int(match.group(1)) if match else 10**9, str(path))
+
+
 def load_traces(root: Path) -> list[dict[str, Any]]:
+    """Load only benchmark result JSONs, never checkpoint/duplicate JSONs."""
     traces: list[dict[str, Any]] = []
-    for path in sorted(root.rglob("*.json")):
+    paths = sorted(
+        (p for p in root.rglob("*.json") if p.name in RESULT_FILENAMES),
+        key=_chunk_key,
+    )
+    if not paths:
+        raise ValueError(f"No P0 benchmark result artifacts found under {root}")
+    for path in paths:
         try:
             payload = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            continue
-        if isinstance(payload, dict) and isinstance(payload.get("traces"), list):
-            traces.extend(t for t in payload["traces"] if t.get("policy") == "P0")
+        except (OSError, json.JSONDecodeError) as exc:
+            raise ValueError(f"Invalid benchmark artifact: {path}: {exc}") from exc
+        if not isinstance(payload, dict) or not isinstance(payload.get("traces"), list):
+            raise ValueError(f"Benchmark artifact has no trace list: {path}")
+        traces.extend(t for t in payload["traces"] if t.get("policy") == "P0")
     if not traces:
-        raise ValueError(f"No P0 traces found under {root}")
+        raise ValueError(f"No P0 traces found in benchmark result artifacts under {root}")
     return traces
 
 
@@ -35,31 +52,47 @@ def main() -> None:
 
     traces = load_traces(args.p0_root)
     questions = json.loads(args.question_file.read_text(encoding="utf-8"))
-    gold = {(r["question"], r["db_id"]): r["query"] for r in questions}
-    evaluator = OfficialSpiderExecutionEvaluator(args.spider_eval_dir, args.tables_file)
+    if not isinstance(questions, list):
+        raise ValueError("Question file must contain a JSON list")
 
-    seen: set[tuple[str, str]] = set()
+    gold_by_key: dict[tuple[str, str], list[str]] = {}
+    for row in questions:
+        key = (row["question"], row["db_id"])
+        gold_by_key.setdefault(key, []).append(row["query"])
+
+    evaluator = OfficialSpiderExecutionEvaluator(args.spider_eval_dir, args.tables_file)
+    occurrence: dict[tuple[str, str], int] = {}
     corrected: list[dict[str, Any]] = []
     for trace in traces:
         key = (trace["question"], trace["db_id"])
-        if key in seen:
-            raise ValueError(f"Duplicate P0 case: {key}")
-        seen.add(key)
-        if key not in gold:
-            raise KeyError(f"P0 case missing from question file: {key}")
+        idx = occurrence.get(key, 0)
+        occurrence[key] = idx + 1
+        gold_options = gold_by_key.get(key)
+        if not gold_options or idx >= len(gold_options):
+            raise KeyError(f"P0 case occurrence missing from question file: {key} occurrence={idx}")
         db_path = args.database_dir / trace["db_id"] / f"{trace['db_id']}.sqlite"
         updated = dict(trace)
         updated["official_execution_correct"] = evaluator.correct(
-            db_path, trace["db_id"], trace.get("generated_sql"), gold[key]
+            db_path, trace["db_id"], trace.get("generated_sql"), gold_options[idx]
         )
+        updated["recomputed_case_occurrence"] = idx
         corrected.append(updated)
 
-    corrected.sort(key=lambda r: (r["db_id"], r["question"]))
+    expected = len(questions)
+    if len(corrected) != expected:
+        raise ValueError(f"P0 denominator mismatch after recomputation: {len(corrected)} != {expected}")
+    for key, gold_options in gold_by_key.items():
+        if occurrence.get(key, 0) != len(gold_options):
+            raise ValueError(
+                f"P0 occurrence mismatch for {key}: observed={occurrence.get(key, 0)} expected={len(gold_options)}"
+            )
+
     payload = {
-        "schema_version": "p0-official-recompute-v1",
+        "schema_version": "p0-official-recompute-v2",
         "source_root": str(args.p0_root),
         "question_file": str(args.question_file),
         "trace_count": len(corrected),
+        "case_key": "(question, db_id, occurrence_in_dataset_order)",
         "traces": corrected,
     }
     args.output.parent.mkdir(parents=True, exist_ok=True)
