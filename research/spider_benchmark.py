@@ -101,7 +101,7 @@ class SecondaryExecutionEvaluator:
 class BenchmarkEnvironment:
     COSTS = {"retrieve_schema": .02, "deterministic_execute": .05, "generate_sql": .20, "execute_sql": .05, "verify_sql": .12, "repair_sql": .16, "agentic_escalation": .45, "abstain": 0.0}
     def __init__(self, dataset, evaluator, provider, deterministic, max_cost=1.0):
-        self.dataset, self.evaluator, self.provider, self.deterministic, self.max_cost = dataset, evaluator, provider, deterministic
+        self.dataset, self.evaluator, self.provider, self.deterministic, self.max_cost = dataset, evaluator, provider, deterministic, max_cost
         self.max_cost = max_cost
     def _add_cost(self, trace, action):
         if trace.cost + self.COSTS[action] > self.max_cost:
