@@ -7,7 +7,7 @@ on:
 
 concurrency:
   group: p1-spider-chunk5-recovery
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 env:
   PYTHONPATH: .
@@ -81,13 +81,13 @@ jobs:
           test -z "${AZURE_OPENAI_API_KEY:-}"
           test -z "${AZURE_API_KEY:-}"
           test -z "${OPENAI_API_KEY:-}"
-      - name: Run bounded development chunk 5
+      - name: Run process-isolated development chunk 5
         run: |
           mkdir -p artifacts/spider
-          python -m research.spider_benchmark_bounded --questions data/spider/dev_chunk.json --database-dir data/spider/database --spider-eval-dir external/spider --tables-file data/spider/tables.json --checkpoint artifacts/spider/p0_p5_dev.checkpoint.json --output artifacts/spider/p0_p5_dev.json --policy-timeout-seconds 150
-      - name: Run bounded unseen chunk 5
+          python -m research.spider_benchmark_isolated --questions data/spider/dev_chunk.json --database-dir data/spider/database --spider-eval-dir external/spider --tables-file data/spider/tables.json --checkpoint artifacts/spider/p0_p5_dev.checkpoint.json --output artifacts/spider/p0_p5_dev.json --policy-timeout-seconds 150
+      - name: Run process-isolated unseen chunk 5
         run: |
-          python -m research.spider_benchmark_bounded --questions data/spider/unseen_chunk.json --database-dir data/spider/database --spider-eval-dir external/spider --tables-file data/spider/tables.json --checkpoint artifacts/spider/p0_p5_unseen.checkpoint.json --output artifacts/spider/p0_p5_unseen.json --policy-timeout-seconds 150
+          python -m research.spider_benchmark_isolated --questions data/spider/unseen_chunk.json --database-dir data/spider/database --spider-eval-dir external/spider --tables-file data/spider/tables.json --checkpoint artifacts/spider/p0_p5_unseen.checkpoint.json --output artifacts/spider/p0_p5_unseen.json --policy-timeout-seconds 150
       - name: Upload recovered chunk 5
         uses: actions/upload-artifact@v4
         with:
@@ -162,7 +162,7 @@ jobs:
           python - <<'PY'
           import json
           from pathlib import Path
-          report={'status':'P5_GATE_PENDING_HUMAN_REVIEW','automated_decision':'STOP_AT_P5','primary_rule':'Do not implement P6 unless P5 shows a defensible improvement at matched reliability/cost/latency criteria.','development_analysis':json.loads(Path('artifacts/final/p0_p5_analysis.json').read_text()),'unseen_schema_analysis':json.loads(Path('artifacts/final/p0_p5_unseen_schema_analysis.json').read_text()),'note':'Recovered chunk 5 uses bounded runtime controls; timeout traces remain in the denominator and are not silently excluded.'}
+          report={'status':'P5_GATE_PENDING_HUMAN_REVIEW','automated_decision':'STOP_AT_P5','primary_rule':'Do not implement P6 unless P5 shows a defensible improvement at matched reliability/cost/latency criteria.','development_analysis':json.loads(Path('artifacts/final/p0_p5_analysis.json').read_text()),'unseen_schema_analysis':json.loads(Path('artifacts/final/p0_p5_unseen_schema_analysis.json').read_text()),'note':'Recovered chunk 5 uses hard process isolation; timeout/error traces remain in the denominator and are not silently excluded.'}
           Path('artifacts/final/p5_research_gate.json').write_text(json.dumps(report,indent=2)+'\n')
           PY
       - name: Upload complete recovered research evidence
