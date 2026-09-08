@@ -28,6 +28,6 @@ def test_boolean_official_label_is_accepted(tmp_path: Path) -> None:
 
 def test_non_boolean_official_label_fails_closed(tmp_path: Path) -> None:
     path = tmp_path / "p0.json"
-    write_payload(path, 1)
+    write_payload(path, "1")
     with pytest.raises(ValueError, match="refusing to coerce"):
         load_p0(path)
