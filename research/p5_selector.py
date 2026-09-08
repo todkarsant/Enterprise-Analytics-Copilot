@@ -7,7 +7,7 @@ _PREDICATE_RE = re.compile(
     r"\b(?:whose|named|where|with\s+(?:the\s+)?(?:name|id|number|value)|"
     r"that\s+(?:has|have|is|are|contains|contain))\b"
 )
-_LITERAL_RE = re.compile(r"['\"]([^'\"]+)['\"]")
+_LITERAL_RE = re.compile(r"(?<![A-Za-z])['\"]([^'\"]{2,})['\"]")
 
 
 def assess_strict_evidence(question: str, sql: str, row_count: int | None) -> tuple[bool, str | None]:
@@ -32,9 +32,7 @@ def assess_strict_evidence(question: str, sql: str, row_count: int | None) -> tu
     if _PREDICATE_RE.search(q) and not any(clauses.values()):
         return True, "question_predicate_not_reflected"
 
-    if _LITERAL_RE.search(question) and not any(
-        (clauses["where"], clauses["join"], clauses["having"])
-    ):
+    if _LITERAL_RE.search(question) and not any((clauses["where"], clauses["join"], clauses["having"])):
         return True, "literal_predicate_not_reflected"
 
     if re.search(r"\b(?:ascending|descending|in\s+ascending|in\s+descending|sort(?:ed|ing)?)\b", q):
@@ -45,10 +43,7 @@ def assess_strict_evidence(question: str, sql: str, row_count: int | None) -> tu
         if not clauses["order"] and not re.search(r"\b(?:max|min)\s*\(", s):
             return True, "extremum_not_reflected"
 
-    aggregate_requested = re.search(
-        r"\b(?:how\s+many|number\s+of|count\s+of|average|avg|maximum|minimum|sum\s+of|total)\b",
-        q,
-    )
+    aggregate_requested = re.search(r"\b(?:how\s+many|number\s+of|count\s+of|average|avg|maximum|minimum|sum\s+of|total)\b", q)
     if aggregate_requested and not re.search(r"\b(?:count|avg|max|min|sum)\s*\(", s):
         return True, "aggregation_not_reflected"
 
@@ -56,8 +51,6 @@ def assess_strict_evidence(question: str, sql: str, row_count: int | None) -> tu
         return True, "grouping_not_reflected"
 
     if re.search(r"\b(?:name|names|full\s+name)\b", q) and "*" not in s:
-        # A name request is only considered structurally satisfied when the
-        # selected expression exposes a name-like column.
         projection = s.split(" from ", 1)[0]
         if not re.search(r"\b(?:name|_name)\b", projection):
             return True, "requested_name_not_projected"
