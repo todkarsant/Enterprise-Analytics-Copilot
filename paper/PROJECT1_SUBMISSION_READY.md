@@ -713,7 +713,7 @@ The Project 1 result is therefore an empirical input to the next research proble
 33. Gartner. (2026). **Use This Framework to Evaluate AI Agents.** Published 26 June 2026. https://www.gartner.com/en/documents/8061133
 34. Gartner. (2026). **Observability Is a Must for Custom AI Agents and Multiagent Systems.** Published 17 August 2026. https://www.gartner.com/en/documents/8271421
 
-> **Reference-order note:** References are now numbered in manuscript order: the main scientific corpus [1–24], the four verified scientific additions [25–28], and Gartner industry-context sources [29–34]. Gartner sources are not used to establish academic novelty.
+> **Reference-order note:** References are now numbered in manuscript order: the main scientific corpus [1–24], the four verified scientific additions [25–28], and Gartner industry-context references [29–34]. Gartner sources are not used to establish academic novelty.
 
 ---
 
@@ -775,3 +775,19 @@ The supplied literature review was organized into the following 53-link research
 | Limitation | Must be disclosed where it materially affects inference. |
 
 The manuscript's central claim remains conditional and mechanism-specific. No universal reliability, optimality, safety, compliance, governance-completeness or production-readiness claim is made.
+
+---
+
+## Appendix C — Submission Availability Statements
+
+### Data Availability
+
+The experiments use the public Spider benchmark. The exact case partition, schema-level split, evaluator version, and analysis manifests are documented in the repository. The repository does not redistribute benchmark material subject to its original license; users should obtain the dataset from its official source and reproduce the documented split and evaluation procedure.
+
+### Code Availability
+
+The research repository contains the isolated benchmark runner, official evaluator adapter, P5/P5R/P6-IP research implementations, analysis scripts, tests, provenance manifests, and manuscript artifacts. The submission baseline should be identified by an immutable Git commit rather than by a moving branch. No claim of one-command reproduction is made unless the complete procedure has been independently executed from a clean environment.
+
+### Experimental Reproducibility
+
+The primary evaluation contract records the dataset partition, schema split seed, official evaluator commit, model/provider, process isolation, timeout, chunking and analysis procedure. Correctness labels used by the policy are separated from post-hoc official evaluator outcomes to prevent oracle leakage.
