@@ -3,23 +3,19 @@
 **Project 1 — Enterprise Analytics Copilot**  
 **Manuscript status:** Submission-ready research draft; empirical claims locked to executed evidence.  
 **Target format:** arXiv-compatible preprint / Nature-style initial manuscript structure.  
-**Branch:** `research/p6-ip-defensibility`
+**Branch:** `research/paper-lit-integration`
 
-> **Claim discipline.** This manuscript is an empirical boundary/failure-mode study. It does not claim novelty for adaptive routing, cascades, selective prediction, SQL verification, abstention, Text-to-SQL, or enterprise governance individually. The central claim is narrower: **under the tested cross-schema setting, decision-time evidence combined with low-cost executable/structural verification was not sufficient to authorize safe incumbent replacement.**
+> **Claim discipline.** This manuscript is an empirical boundary/failure-mode study. It does not claim novelty for adaptive routing, cascades, selective prediction, SQL verification, abstention, Text-to-SQL, AI auditing, or enterprise governance individually. The central claim is narrower: **under the tested cross-schema setting, decision-time evidence combined with low-cost executable/structural verification was not sufficient to authorize safe incumbent replacement.**
 
 ---
 
-## Summary
+## Abstract
 
-Enterprise analytical agents increasingly combine retrieval, SQL generation, execution, verification, repair, clarification and escalation. A natural design is to use intermediate evidence to decide whether more computation is justified. The difficulty is that the evidence useful for detecting risk may not be reliable enough to authorize an asymmetric action: discarding an incumbent answer that is already correct.
+Enterprise analytical agents increasingly combine retrieval, SQL generation, execution, verification, repair, clarification and escalation. A natural strategy is to use intermediate evidence to decide whether additional computation is warranted. A harder question is whether the same evidence is sufficiently trustworthy to authorize replacing an incumbent answer that may already be correct. This study separates three decisions that are often conflated: **correctness prediction, intervention eligibility, and replacement authorization**. We evaluate fixed, query-only and post-evidence policies (P0–P5), perform mechanism forensics (P5R), and then test an incumbent-preserving challenger (P6-IP) that begins from a frozen P0 answer, uses decision-time evidence to trigger intervention, and replaces the incumbent only after SQL validity, execution and structural verification checks. Correctness is evaluated only post hoc with the pinned official Spider evaluator.
 
-This study tests that boundary. We first evaluate fixed, query-only and post-evidence policies (P0–P5), then perform mechanism forensics (P5R), and finally evaluate an incumbent-preserving challenger (P6-IP). P6-IP begins with a frozen P0 incumbent, uses only decision-time evidence to determine intervention eligibility, generates a challenger for eligible cases, and replaces the incumbent only after SQL validity, execution and structural verification checks. Correctness is evaluated only post hoc with the pinned official Spider evaluator.
+Across the 1,034-case evaluation artifact, P0 is correct on 254 cases (24.565%) and P6-IP on 234 cases (22.631%), a paired difference of −1.934 percentage points (exact McNemar p=0.001193). Among development intervention-eligible cases, P6-IP harms 21 of 62 P0-correct incumbents (33.87%) while rescuing only 2 of 268 P0-wrong incumbents (0.75%); mean cost is approximately 25.8% higher than P0. On the 254 held-out-schema cases, the same directional pattern appears: 31.25% harm versus 1.33% rescue among eligible cases, with approximately 29.2% higher mean cost. The historical holdout execution preceded complete development aggregation and is therefore reported as locked observational corroboration rather than a fully prospective confirmatory test.
 
-On 1,034 development cases, P0 is correct on 254 cases (24.565%) and P6-IP on 234 (22.631%), a paired difference of −1.934 percentage points (exact McNemar p=0.001193). Among intervention-eligible cases, P6-IP harms 21 of 62 P0-correct incumbents (33.87%) but rescues only 2 of 268 P0-wrong incumbents (0.75%). Mean cost is 25.8% higher than P0. On the 254 held-out-schema cases, the same direction is observed: 31.25% harm versus 1.33% rescue among eligible cases, with 29.2% higher mean cost. Because the historical holdout execution preceded complete development aggregation/freeze, it is reported only as locked observational corroboration, not as a fully prospective confirmatory test.
-
-The result does not show that adaptive intervention or verification is impossible. It identifies a mechanism boundary: **evidence sufficient to justify investigation is not necessarily evidence sufficient to authorize replacement.** This distinction separates three decisions that are often conflated: correctness prediction, intervention, and replacement authorization.
-
-The study also introduces a Defensibility Layer that records decision-time evidence, provenance, policy rationale, verification, authorization hooks, outcome, cost, latency and reproducibility separately from post-hoc evaluator labels. Gartner's 2026 work on Defensible AI, agent reliability, trust engineering and AI evaluation/observability is used as industry-context evidence for the importance of these controls, not as evidence of academic novelty.
+The results do not establish that adaptive intervention or verification is impossible. They expose a narrower mechanism boundary: **evidence sufficient to justify investigation is not necessarily evidence sufficient to authorize replacement**. Recent work on agentic AI, trustworthy decision-making and stronger Text-to-SQL verification reinforces why autonomy, verifiability and safety should not be collapsed into a single capability measure [31–33]. Work on AI auditing further shows that evaluation evidence is not equivalent to accountability unless audit design, methodology and institutional context support consequential follow-through [34]. Project 1 therefore adds a Defensibility Layer that preserves decision-time evidence, provenance, policy rationale, verification, authorization hooks, outcome, cost and reproducibility separately from post-hoc correctness labels. The resulting contribution is an empirical boundary study of incumbent replacement authority and an auditability-oriented research design, not a claim of universal routing optimality, formal safety, legal compliance, or production readiness.
 
 ---
 
@@ -50,7 +46,7 @@ The study also introduces a Defensibility Layer that records decision-time evide
                              NO
 ```
 
-Modern LLM-based analytical systems make sequential decisions. A system may retrieve schema information, generate SQL, execute it, inspect errors or results, verify structural properties, repair the query, ask for clarification, or escalate to a more capable agent. Research on adaptive tool use, routing, cascading, selective prediction, SQL verification and enterprise governance has already established many components of this design space [1–12].
+Modern LLM-based analytical systems make sequential decisions. A system may retrieve schema information, generate SQL, execute it, inspect errors or results, verify structural properties, repair the query, ask for clarification, or escalate to a more capable agent. Recent reviews describe tool use, reflection, planning and autonomous action as established agentic design patterns [31]. Trustworthy-AI work likewise emphasizes that dependable decision-making requires verifiability, robustness, safety and explicit constraints rather than predictive performance alone [32]. Research on Text-to-SQL verification demonstrates that verification can itself involve substantially richer multi-stage mechanisms than simple execution or structural checks [33].
 
 The scientific question is therefore not whether an analytical agent can adapt. It is whether **evidence that is useful for deciding to investigate a case is also strong enough to authorize replacing an incumbent answer**.
 
@@ -90,12 +86,13 @@ This paper does **not** claim that it invented:
 - Text-to-SQL verification;
 - confidence estimation;
 - abstention;
+- AI auditing or accountability;
 - enterprise semantic governance;
 - agentic Text-to-SQL.
 
-Those are established areas in the supplied literature corpus [1–24].
+Those are established areas in the supplied and directly verified literature [1–24,31–34].
 
-Instead, the paper makes a narrower empirical contribution: it **separates prediction, intervention and replacement authorization and measures their asymmetry explicitly**.
+Instead, the paper makes a narrower empirical contribution: it **separates prediction, intervention and replacement authorization, quantifies their asymmetric consequences, and adds an auditability-oriented evidence layer for reconstructing those decisions**.
 
 ---
 
@@ -119,8 +116,18 @@ The literature clusters into the following families:
 | Enterprise governance | Enforce metrics, joins, filters, access and cost constraints. | “Enterprise” requires more than Spider accuracy. |
 | Interactive Text-to-SQL | Resolve ambiguity/unanswerability through interaction. | Evidence can indicate uncertainty without uniquely determining replacement. |
 | Multi-turn/context optimization | Improve analytical context using memory and historical artifacts. | Context construction is another established axis. |
+| Trustworthy decision-making | Use explicit constraints, verifiability, robustness and safety to support dependable decisions. | Decision evidence and control boundaries should not be conflated with model capability. |
+| AI auditing/accountability | Audit effectiveness depends on methodology and institutional context, not logging alone. | Evaluation evidence and accountability must remain distinct. |
 
 ### 2.2 The closest novelty threats
+
+**Agentic systems.** Reviews of agentic AI identify tool use, reflection, planning, ReAct-style interaction and autonomous decision-making as established patterns [31]. Project 1 therefore does not claim novelty for an agent simply acting sequentially or selecting tools.
+
+**Trustworthy decision-making.** Song and Zhang's review frames trustworthy AI around verifiable, robust and safe decision-making under explicit physical knowledge and constraints [32]. Although their domain is physics-informed control, the principle is relevant here: explicit constraints and interpretable decision pathways matter when a learned system acts consequentially. Project 1 borrows that principle only at the framing level; it does not claim physics-informed guarantees.
+
+**Text-to-SQL verification.** G²SQL demonstrates a substantially richer verification architecture combining a learning-based SQL-plan feedback loop with a Reviewer–Observer mechanism for generation, validation and revision [33]. This establishes an important threat to any claim that SQL execution or simple structural checks constitute a novel verifier.
+
+**AI auditing and accountability.** Birhane et al. caution that conducting an AI audit does not by itself produce accountability; audit design, methodology, stakeholders and institutional context influence whether audit findings translate into accountability outcomes [34]. Project 1 therefore treats its provenance and decision records as **auditability-supporting evidence**, not as proof of accountability or compliance.
 
 **Post-evidence escalation.** *The Coverage Illusion* shows that the need for expensive augmentation can become visible only after retrieval, and evaluates a cheapest-first post-retrieval cascade in production [4]. This makes P5 a mandatory comparator rather than an optional baseline.
 
@@ -153,7 +160,7 @@ LEVEL 3 — AUTHORIZATION
 Is the evidence strong enough to discard the incumbent?
 ```
 
-Project 1 tests whether a signal useful for Level 1/2 is sufficient for Level 3.
+Project 1 tests whether a signal useful for Level 1/2 is sufficient for Level 3. The AI-auditing literature adds a complementary Level 4: **can the consequential decision later be reconstructed and challenged from preserved evidence?** [34]
 
 The paper's central proposition is therefore:
 
@@ -278,7 +285,7 @@ The gate checks:
 2. successful execution;
 3. structural consistency with detected question requirements.
 
-It does **not** establish semantic equivalence between incumbent and challenger results.
+It does **not** establish semantic equivalence between incumbent and challenger results. Recent G²SQL work demonstrates that substantially stronger verification architectures are possible, so the present gate should be understood as a deliberately constrained baseline [33].
 
 ### 3.6 Decision-time versus post-hoc separation
 
@@ -295,7 +302,7 @@ Challenger SQL
 Verification result
 ```
 
-This separation prevents the evaluator from becoming an oracle inside the policy.
+This separation prevents the evaluator from becoming an oracle inside the policy and supports later reconstruction of consequential decisions [34].
 
 ### 3.7 Primary metrics
 
@@ -316,7 +323,8 @@ This separation prevents the evaluator from becoming an oracle inside the policy
 - P50/P95/P99 latency;
 - runtime failures;
 - decision-trace completeness;
-- evidence provenance completeness.
+- evidence provenance completeness;
+- auditability/reproducibility fields.
 
 ### 3.8 Statistical tests
 
@@ -439,7 +447,7 @@ P6-IP rejected 173 challenger interventions on development and 52 on holdout, so
 
 However, among accepted replacements, the gate still admitted harmful replacements. In development, 35 of 157 replacements were P0-correct incumbents, meaning **22.29% of replacements were harmful**.
 
-This does not imply that verification is useless. It implies:
+This does not imply that verification is useless. Recent Text-to-SQL verification research demonstrates stronger architectures that combine plan-level feedback and reviewer/observer mechanisms [33]. The supported inference here is narrower:
 
 ```text
 SQL validity
@@ -459,8 +467,8 @@ That is the mechanism boundary exposed by the experiment.
 
 P6-IP is also more expensive because intervention requires additional execution:
 
-- development: +25.8% mean cost versus P0;
-- holdout: +29.2% mean cost versus P0.
+- development: approximately +25.8% mean cost versus P0;
+- holdout: approximately +29.2% mean cost versus P0.
 
 Thus the challenger does not trade additional computation for a favorable reliability improvement. It spends more while reducing aggregate correctness.
 
@@ -487,7 +495,7 @@ The experiment does not establish that:
 - adaptive execution is impossible;
 - replacement can never be made reliable.
 
-The correct conclusion is a **mechanism boundary**, not a universal impossibility theorem.
+The correct conclusion is a **mechanism boundary**, not a universal impossibility theorem. G²SQL is particularly relevant here because it demonstrates a stronger multi-stage verification design than the constrained gate tested in this study [33].
 
 ### 5.3 Why the negative result is useful
 
@@ -502,11 +510,15 @@ The answer supported by the data is that the evidence used by the selector and t
 
 The experiment therefore distinguishes **risk evidence** from **replacement evidence**.
 
+### 5.4 From evaluation to auditability
+
+The empirical result also clarifies a separate layer of defensibility. Official execution accuracy evaluates correctness under the benchmark protocol. It does not, by itself, show that a consequential decision can later be reconstructed, challenged, assigned to a policy, or connected to evidence. Birhane et al. emphasize that effective auditing depends on audit design, methodology and institutional context rather than on the existence of an audit record alone [34]. Accordingly, Project 1 treats its provenance, policy rationale and decision traces as **auditability-supporting evidence** rather than as proof of accountability.
+
 ---
 
 ## 6. Defensibility Layer
 
-The Defensibility Layer is deliberately orthogonal to the primary accuracy claim.
+The Defensibility Layer is deliberately orthogonal to the primary accuracy claim. It is an evidence/provenance and control-observability layer, not a claim of legal compliance or complete enterprise governance.
 
 ```text
 QUESTION
@@ -532,9 +544,55 @@ Each decision should make it possible to answer:
 4. Which verification/authorization controls were applied?
 5. What outcome, cost and accountability evidence was recorded?
 
-This aligns with current enterprise reliability thinking: Gartner describes system-level guardrails and monitoring for agent reliability [25], Defensible AI and AgentOps as emerging enterprise architecture responsibilities [26], AI evaluation/observability as necessary for repeatable reliability measurement [27], and the need to instrument agent components so that what happened and what triggered an action can be reconstructed [28].
+This layer is informed by two complementary strands of literature. Trustworthy-computing work emphasizes explicit constraints and verifiable decision pathways [32], while AI-auditing research cautions that evidence and audit procedures do not automatically create institutional accountability [34]. Project 1 therefore preserves the evidence needed for reconstruction while explicitly stopping short of claiming accountability itself.
 
-The layer does **not** establish legal compliance, complete governance, human-factors explainability or production readiness.
+Current enterprise reliability thinking also supports system-level guardrails, monitoring, evaluation and observability [25–30]. Those references establish industry relevance rather than academic novelty.
+
+### 6.1 Auditability is not accountability
+
+The distinction is operationally important:
+
+```text
+Benchmark evaluation
+    = Did the system produce the correct SQL/result?
+
+Decision traceability / auditability
+    = Can we reconstruct what evidence and policy caused the action?
+
+Accountability
+    = Can evidence support challenge, ownership,
+      remediation and consequential oversight?
+```
+
+Project 1 directly evaluates the first, instruments the second, and does **not** claim to have experimentally established the third.
+
+### 6.2 Decision record contract
+
+The intended research record contains case identity, schema, policy/code commit, model/provider/version, dataset/evaluator manifest, incumbent SQL, pre-intervention evidence and provenance, selector rationale, KEEP/INTERVENE decision, challenger SQL, verification checks, replacement/preservation outcome, harm/rescue class, abstention/runtime status, latency, token/call/cost measures, errors, timestamp and correlation identifier.
+
+Gold/evaluator correctness remains a post-hoc field and is not available to the decision-time policy. This separation prevents oracle leakage while preserving the evidence needed for retrospective audit and reproducibility [34].
+
+### 6.3 Control hooks
+
+The Defensibility Layer exposes explicit control points for:
+
+```text
+authorization
+     ↓
+data-access policy
+     ↓
+tool/action allow-list
+     ↓
+SQL safety
+     ↓
+budget / timeout
+     ↓
+verification
+     ↓
+auditable outcome
+```
+
+Spider does not supply realistic organizational authorization metadata, so the experiment does not claim to validate RBAC/ABAC or legal compliance. Those require a separate benchmark and control study [14].
 
 ---
 
@@ -542,27 +600,35 @@ The layer does **not** establish legal compliance, complete governance, human-fa
 
 ### 7.1 P0 is weak
 
-P0 achieves only 24.565% on development with `llama3.2:1b`. A reviewer can argue that the replacement behavior may differ with a stronger incumbent.
+P0 achieves only 24.565% on the 1,034-case evaluation artifact with `llama3.2:1b`. A reviewer can argue that replacement behavior may differ with a stronger incumbent.
 
 That criticism is valid. The result is therefore not an impossibility theorem. The paired harm/rescue result remains informative because it measures what the challenger does to cases that the incumbent gets right and wrong.
 
 ### 7.2 Verification is intentionally weak
 
-The gate does not prove semantic equivalence. Stronger verifiers exist [1,2]. Therefore the paper claims only that the **tested gate** was insufficient.
+The gate does not prove semantic equivalence. Stronger verification systems exist, including the multi-stage G²SQL architecture [33]. The paper therefore claims only that the **tested gate** was insufficient. It does not claim that stronger verification cannot support safe replacement.
 
-### 7.3 Spider is not an enterprise production benchmark
+### 7.3 Domain transfer from trustworthy-computing literature is limited
+
+Song and Zhang address physics-informed AI for safety-critical physical decision-making and control [32]. Project 1 operates in analytical Text-to-SQL. The transferable point is the importance of explicit constraints and verifiability, not the physical-law mechanism or its safety guarantees.
+
+### 7.4 AI auditing does not equal accountability
+
+Birhane et al. explicitly distinguish audit practice from effective accountability [34]. Project 1's provenance and trace records should therefore be described as auditability infrastructure. They do not prove institutional accountability, human oversight, legal compliance, or effective remediation.
+
+### 7.5 Spider is not an enterprise production benchmark
 
 Spider provides cross-schema Text-to-SQL evaluation, not real enterprise authorization, business definitions, privacy controls, workflow ownership or production distributions. Enterprise claims are consequently limited to an enterprise-motivated analytical execution methodology.
 
-### 7.4 Holdout ordering deviation
+### 7.6 Holdout ordering deviation
 
 The historical P6 workflow executed holdout cases before complete development aggregation/freeze. This is explicitly disclosed and prevents the holdout from being called fully prospective confirmation. No holdout outcome was used to tune the policy.
 
-### 7.5 Implementation-specific failure
+### 7.7 Implementation-specific failure
 
 A reviewer may argue that the harm/rescue asymmetry is specific to the selector, model and verification implementation. This is a legitimate limitation. The paper consequently calls the result a **tested mechanism boundary**, not a universal impossibility result.
 
-### 7.6 Literature coverage
+### 7.8 Literature coverage
 
 The supplied corpus contains 53 links as provided, while the repository audit reports 54 unique arXiv IDs after removing one duplicate. Because not every supplied item was fully text-verified, the paper cites the directly verified and most constraining references for specific claims rather than falsely implying exhaustive full-text review of every item.
 
@@ -572,33 +638,13 @@ The supplied corpus contains 53 links as provided, while the repository audit re
 
 Project 1 does not end with a better router. It ends with a better-defined scientific boundary.
 
-The central empirical finding is:
+Across the tested Spider cross-schema workload, the evidence-triggered incumbent-preserving policy did not improve reliability or cost. Relative to the frozen P0 incumbent, P6-IP reduced accuracy by approximately 1.93 percentage points on the full evaluation artifact and increased mean cost by approximately 25.8%. More importantly, the intervention analysis exposed a strong asymmetry: on development cases eligible for intervention, 33.87% of P0-correct incumbents were harmed while only 0.75% of P0-wrong incumbents were rescued. The held-out-schema partition showed the same directional pattern, with 31.25% harm versus 1.33% rescue among eligible cases. The historical holdout is treated only as observational corroboration because of its execution ordering.
 
-> **Correctness prediction, intervention eligibility and replacement authorization are different decisions.**
+These results support a narrow conclusion rather than a universal theorem. **Decision-time evidence can be sufficient to justify investigation without being sufficient to authorize replacement.** Executability and structural consistency are useful control signals, but in this tested configuration they did not provide adequate protection against harmful replacement. Stronger verification architectures remain a live alternative and are explicitly outside the claim boundary [33].
 
-In the tested setting, intermediate evidence plus low-cost executable/structural verification was not sufficient for safe incumbent replacement. P6-IP harmed correct incumbents substantially more often than it rescued incorrect ones, increased cost, and reduced aggregate accuracy.
+The study also establishes a separation between three technical decisions—prediction, intervention and replacement authorization—and a separate accountability-oriented evidence question: whether the decision can later be reconstructed and examined. The Defensibility Layer operationalizes that fourth concern through provenance, policy rationale, verification, authorization hooks, outcome and reproducibility records, while the AI-auditing literature provides the caution that such records support auditability rather than automatically creating accountability [34].
 
-The result therefore rejects a simplistic progression of:
-
-```text
-more evidence → more confidence → replace incumbent
-```
-
-and replaces it with:
-
-```text
-more evidence
-      ↓
-better risk assessment?
-      ↓
-worth investigating?
-      ↓
-strong enough to authorize replacement?
-      ↓
-ONLY IF YES: replace
-```
-
-This distinction provides a concrete research boundary for future work. It also motivates Project 2: rather than immediately creating another router, build an evaluation and observability methodology capable of measuring the gap between predictive evidence, actionable evidence and evidence sufficient for consequential action.
+The practical research consequence is therefore not “add another router.” It is to measure, attribute and monitor the gap between **predictive evidence, actionable evidence, replacement-authorizing evidence, and auditable evidence**. This directly motivates Project 2: a production-oriented LLM evaluation and observability platform designed to quantify such boundaries rather than obscure them.
 
 ---
 
@@ -611,6 +657,10 @@ Can an analytical agent act safely and efficiently?
              ▼
 NEGATIVE BOUNDARY
 Evidence can be predictive without being safe authorization.
+             │
+             ▼
+AUDITABILITY LAYER
+Can we reconstruct and challenge the consequential decision?
              │
              ▼
 PROJECT 2
@@ -655,6 +705,15 @@ The Project 1 result is therefore an empirical input to the next research proble
 23. **BUDDY: Budget-driven dynamic computation depth.** arXiv:2606.09514. https://arxiv.org/abs/2606.09514
 24. **Conditional Experience Transfer.** arXiv:2608.26730. https://arxiv.org/abs/2608.26730
 
+## Recent verified scientific additions
+
+25. Gartner references are listed below as industry-context only; they are not academic novelty evidence.
+
+31. Nisa, U., Shirazi, M., Saip, M. A., & Pozi, M. S. M. (2026). **Agentic AI: The age of reasoning—A review.** *Journal of Automation and Intelligence*, 5(1), 69–89. https://doi.org/10.1016/j.jai.2025.08.003. citeturn407801search0
+32. Song, Y., & Zhang, A. (2026). **From black box to physically interpretable: Trustworthy computing for AI-driven decision-making and control.** *Journal of Automation and Intelligence*, 5(2), 91–111. https://doi.org/10.1016/j.jai.2025.09.003. citeturn407801search3
+33. Li, X., You, J., Li, H., Peng, J., Chen, X., Guo, Z., Li, K., & Xu, T. (2026). **G²SQL: guided & guarded Text-to-SQL generation with two-stage verification.** *Expert Systems with Applications*, 311, 131276. https://doi.org/10.1016/j.eswa.2026.131276. citeturn407801search1
+34. Birhane, A., Steed, R., Ojewale, V., Vecchione, B., & Raji, I. D. (2024). **AI auditing: The Broken Bus on the Road to AI Accountability.** arXiv:2401.14462. https://arxiv.org/abs/2401.14462. citeturn407801academia48
+
 ## Gartner industry-context references
 
 25. Gartner. (2026). **From Demo to Production: Closing the AI Agent Reliability Gap.** Published 8 May 2026. https://www.gartner.com/en/documents/7832217
@@ -663,6 +722,8 @@ The Project 1 result is therefore an empirical input to the next research proble
 28. Gartner. (2026). **Engineering Trust: The New Hard Skill Essential for Leading AI.** Published 7 July 2026. https://www.gartner.com/en/documents/8102697
 29. Gartner. (2026). **Use This Framework to Evaluate AI Agents.** Published 26 June 2026. https://www.gartner.com/en/documents/8061133
 30. Gartner. (2026). **Observability Is a Must for Custom AI Agents and Multiagent Systems.** Published 17 August 2026. https://www.gartner.com/en/documents/8271421
+
+> **Reference-order note:** The scientific additions are intentionally numbered [31–34] so that the existing 1–30 citation map is not silently renumbered during this evidence-preserving revision. In a final submission pass, the manuscript can be globally renumbered in citation order if required by the target venue.
 
 > **Gartner citation rule:** Gartner references are included only to establish current industry relevance around reliability, defensibility, evaluation and observability. They are not used to establish academic novelty.
 
@@ -716,10 +777,11 @@ The supplied literature review was organized into the following 53-link research
     ├── RBAC Text-to-SQL
     ├── deterministic safety boundaries
     ├── tool/action controls
-    └── evaluation / observability
+    ├── evaluation / observability
+    └── AI auditing / accountability
 ```
 
-The literature audit explicitly found that the generic formulation “a sequential policy chooses tools/actions under a cost or reliability constraint” is already populated by prior work. The defensible gap is therefore the **empirical distinction between prediction, intervention and replacement authorization under incumbent asymmetry**.
+The literature audit explicitly found that the generic formulation “a sequential policy chooses tools/actions under a cost or reliability constraint” is already populated by prior work. The defensible gap is therefore the **empirical distinction between prediction, intervention and replacement authorization under incumbent asymmetry**, with auditability treated as a separate evidence layer rather than as a claim of accountability.
 
 ---
 
@@ -732,12 +794,15 @@ The literature audit explicitly found that the generic formulation “a sequenti
 | Is the literature gap generic? | No; it is an asymmetric replacement-authority gap. |
 | Is P0 weak? | Yes; explicitly disclosed. |
 | Is verification weak? | Yes; explicitly disclosed as a limitation and mechanism boundary. |
+| Is AI auditing claimed as novel? | No; auditability is a framing/control layer. |
+| Are trustworthy-computing guarantees transferred wholesale from physics? | No; only the explicit-constraint/verifiability principle is used. |
 | Does Spider prove enterprise readiness? | No. |
 | Is P6 failure universal? | No; it is conditional on the tested mechanism/model/benchmark. |
 | Are comparisons paired? | Yes; exact McNemar for correctness, bootstrap for continuous differences. |
 | Is the holdout deviation hidden? | No; explicitly disclosed. |
 | Are Gartner reports used as novelty evidence? | No; industry-context only. |
 | Why is the negative result useful? | It separates prediction, intervention and replacement authorization and quantifies harm/rescue asymmetry. |
+| What does the Defensibility Layer prove? | Auditability-supporting evidence and reconstructability hooks, not accountability/compliance. |
 
 ---
 
@@ -751,6 +816,7 @@ The literature audit explicitly found that the generic formulation “a sequenti
 - P6-IP implementation branch: `research/p6-ip-defensibility`
 - Defensibility design: `docs/PROJECT1_DEFENSIBILITY_LAYER.md`
 - P6-IP result record: `docs/PROJECT1_P6_IP_RESULTS.md`
+- AI auditing integration note: `paper/AI_AUDITING_INTEGRATION_2401_14462.md`
 
 ---
 
@@ -765,6 +831,9 @@ The following claims are intentionally prohibited unless new evidence is produce
 - the method guarantees 90/95/97/99% reliability;
 - Spider demonstrates production enterprise readiness;
 - the result proves no stronger verifier could work;
-- the literature contains no prior adaptive/cascade/verification methods.
+- the literature contains no prior adaptive/cascade/verification methods;
+- provenance logs prove accountability;
+- benchmark evaluation proves legal or organizational compliance;
+- trustworthy-computing results from physics-informed control transfer unchanged to Text-to-SQL.
 
 The supported conclusion remains empirical and conditional on the tested setting.
