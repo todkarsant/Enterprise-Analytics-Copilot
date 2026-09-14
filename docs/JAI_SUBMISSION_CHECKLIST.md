@@ -8,7 +8,7 @@
 
 - [x] Full-length Research Article positioning selected.
 - [x] Title shortened to **When Evidence Is Not Enough: Replacement Decisions in Analytical AI Agents**.
-- [x] Abstract rewritten as a concise, standalone factual abstract.
+- [x] Abstract rewritten as a concise, standalone factual abstract; final substantive strengthening is tracked for P0 manuscript revision.
 - [x] References removed from the abstract.
 - [x] Five keywords added.
 - [x] In-text citations use numeric square brackets.
@@ -34,6 +34,21 @@
 - [x] Defensibility Layer explicitly bounded as auditability-supporting infrastructure, not legal compliance or institutional accountability.
 - [x] Manuscript is currently maintained as a single-column plagiarism/originality-check version by author request.
 - [x] Santosh Sadashiv Todkar confirmed as first/main author and corresponding author.
+- [x] Detailed repository provenance and experiment routing map created at `docs/PROJECT1_REPRODUCIBILITY_MAP.md`.
+
+## P1 — Provenance and reproducibility audit
+
+- [x] Repository and primary manuscript branch explicitly recorded.
+- [x] Canonical manuscript commit and blob SHA recorded.
+- [x] Frozen benchmark/evaluator contract mapped.
+- [x] P6-IP design and execution handoffs mapped.
+- [x] Controlled P6-IP GitHub Actions run mapped.
+- [x] Artifact-integrity repair commits mapped.
+- [x] Corrected P0 recomputation provenance mapped.
+- [x] Decision-time versus post-hoc evidence boundary documented.
+- [x] Research CI/state-gate/workflow locations mapped.
+- [x] Reviewer navigation sequence documented.
+- [x] P1 provenance map created: `docs/PROJECT1_REPRODUCIBILITY_MAP.md`.
 
 ## Author details recorded
 
@@ -57,7 +72,7 @@ ORCID: 0000-0002-0432-6791
 - **Santosh Sadashiv Todkar:** Conceptualization; Methodology; Software; Investigation; Formal analysis; Data curation; Visualization; Writing – original draft; Project administration; overall experimental execution and research coordination.
 - **Digvijay Bhosale:** Validation; Writing – review & editing; review of experimental findings; contribution of insights concerning interpretation and validation of experimental findings.
 
-Both authors are recorded as approving the manuscript and accepting accountability for the work.
+Both authors are recorded as approving the manuscript and accepting accountability for the work; final author confirmation remains part of the submission workflow.
 
 ## Deferred by author request
 
@@ -74,6 +89,7 @@ Both authors are recorded as approving the manuscript and accepting accountabili
 5. Final editable Word/LaTeX conversion into the current JAI submission template.
 6. Final double-column pagination check against JAI's 20-page maximum, including any later biographies/photos.
 7. Final spell/grammar check and removal of any residual placeholders.
+8. One final machine-level numerical cross-check against immutable primary artifacts immediately before submission.
 
 ## Scientific/content audit
 
@@ -90,10 +106,6 @@ Both authors are recorded as approving the manuscript and accepting accountabili
 - [x] P0 weakness, small-model limitation, verification weakness and Spider transfer limitation disclosed.
 - [x] Historical holdout-ordering limitation disclosed as observational corroboration rather than fully prospective confirmation.
 - [x] Defensibility Layer bounded as auditability support rather than legal/compliance proof.
-
-### Numbers requiring primary-artifact verification before journal submission
-
-The reported numerical results are derived from the pinned benchmark/evaluator artifacts and prior independent recomputation. Before final submission, the author should perform one final machine-level cross-check of all headline values against the repository analysis artifacts and pinned evaluator commit, especially the accuracy, harm/rescue, cost, latency and McNemar values.
 
 ## Submission-format items
 
@@ -113,6 +125,7 @@ The reported numerical results are derived from the pinned benchmark/evaluator a
 - `paper/PROJECT1_JAI_FINAL_MANUSCRIPT.md` — canonical scientific/content revision and current single-column plagiarism-check manuscript.
 - `paper/JAI_TITLE_PAGE_AND_AUTHOR_DECLARATIONS.md` — author metadata/provenance record.
 - `docs/JAI_REFERENCE_AUDIT.md` — reference provenance and arXiv-to-publication audit.
+- `docs/PROJECT1_REPRODUCIBILITY_MAP.md` — reviewer-facing code, experiment, commit, run and artifact routing map.
 - `docs/JAI_SUBMISSION_CHECKLIST.md` — this compliance checklist.
 - `paper/PROJECT1_SUBMISSION_READY.md` — historical submission draft; do not treat it as the canonical JAI version.
 
@@ -122,8 +135,7 @@ Do not delete the broader 53-paper research corpus merely to reduce arXiv refere
 
 ## Current audit verdict
 
+**P1 provenance/reproducibility audit: COMPLETE WITH FINAL NUMERICAL CROSS-CHECK DEFERRED TO PRE-SUBMISSION.**  
 **Scientific/content audit: PASS with bounded limitations.**  
 **Plagiarism/originality screening: PENDING AUTHOR ACTION.**  
 **JAI final submission-format audit: intentionally deferred until the plagiarism result is available and the final journal template is applied.**
-
-The remaining issues are consolidated here rather than interrupting the workflow during the audit, as requested by the author.
