@@ -33,13 +33,14 @@
 - [x] No universal routing/verification/enterprise-readiness claim retained.
 - [x] Defensibility Layer explicitly bounded as auditability-supporting infrastructure, not legal compliance or institutional accountability.
 - [x] Manuscript is currently maintained as a single-column plagiarism/originality-check version by author request.
+- [x] Santosh Sadashiv Todkar confirmed as first/main author and corresponding author.
 
 ## Author details recorded
 
-### First author
+### First author and corresponding author
 
 **Santosh Sadashiv Todkar**  
-AI Engineer, Acronotics Private Limited, Bangalore, India  
+AI Engineer, Acronotics Private Limited  
 507, HBR layout, 1st Stage, 4th Block, Outer Ring Road, Bengaluru 560043, India  
 Email: santoshmh09@gmail.com  
 ORCID: 0000-0002-7154-3331
@@ -51,22 +52,28 @@ Department of Mechanical Engineering, Dr. D. Y. Patil Institute of Technology, P
 Email: digvijay_bhonsale@yahoo.co.in  
 ORCID: 0000-0002-0432-6791
 
+## Author contributions
+
+- **Santosh Sadashiv Todkar:** Conceptualization; Methodology; Software; Investigation; Formal analysis; Data curation; Visualization; Writing – original draft; Project administration; overall experimental execution and research coordination.
+- **Digvijay Bhosale:** Validation; Writing – review & editing; review of experimental findings; contribution of insights concerning interpretation and validation of experimental findings.
+
+Both authors are recorded as approving the manuscript and accepting accountability for the work.
+
 ## Deferred by author request
 
 - [ ] Plagiarism/originality check — **author action**.
 - [ ] Author biographies and personal photographs — intentionally deferred until after originality screening.
 - [ ] Final JAI production/template layout — intentionally deferred until after originality screening.
 
-## Remaining author/submission items that must not be invented
+## Remaining audit/submission items
 
-1. Explicit corresponding-author designation and corresponding-author full postal address.
-2. Final CRediT confirmation by both authors before journal submission.
-3. Final JAI editable-template conversion after the plagiarism/originality check.
-4. Final pagination against JAI's 12–20 page Full-length Research Article requirement.
-5. Final pre-submission reference/status audit, including any remaining arXiv publication-status changes.
-6. Final figure/table/caption audit if figures or tables are added or changed.
-
-No affiliation, postal address, corresponding-author designation, biography, photograph, or additional contribution is invented.
+1. **Plagiarism/originality check:** author action; not performed by this workflow.
+2. Recheck all remaining arXiv publication statuses immediately before journal submission because 2026 publication status can change.
+3. Final bidirectional citation/reference audit after any plagiarism-driven textual revisions.
+4. Final figure/table/caption and cross-reference audit after final layout conversion.
+5. Final editable Word/LaTeX conversion into the current JAI submission template.
+6. Final double-column pagination check against JAI's 20-page maximum, including any later biographies/photos.
+7. Final spell/grammar check and removal of any residual placeholders.
 
 ## Scientific/content audit
 
@@ -117,4 +124,6 @@ Do not delete the broader 53-paper research corpus merely to reduce arXiv refere
 
 **Scientific/content audit: PASS with bounded limitations.**  
 **Plagiarism/originality screening: PENDING AUTHOR ACTION.**  
-**JAI submission-format audit: NOT YET SUBMISSION-READY by design.** Final template conversion, corresponding-author confirmation, biographies/photos, final pagination, and final pre-submission reference/status checks remain intentionally deferred.
+**JAI final submission-format audit: intentionally deferred until the plagiarism result is available and the final journal template is applied.**
+
+The remaining issues are consolidated here rather than interrupting the workflow during the audit, as requested by the author.
