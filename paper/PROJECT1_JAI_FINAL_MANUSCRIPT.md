@@ -1,6 +1,6 @@
 # When Evidence Is Not Enough: Replacement Decisions in Analytical AI Agents
 
-**Santosh Sadashiv Todkar**¹  
+**Santosh Sadashiv Todkar**¹,*  
 AI Engineer, Acronotics Private Limited  
 507, HBR layout, 1st Stage, 4th Block, Outer Ring Road, Bengaluru 560043, India  
 Email: santoshmh09@gmail.com  
@@ -11,8 +11,7 @@ Department of Mechanical Engineering, Dr. D. Y. Patil Institute of Technology, P
 Email: digvijay_bhonsale@yahoo.co.in  
 ORCID: https://orcid.org/0000-0002-0432-6791
 
-**First author:** Santosh Sadashiv Todkar  
-**Corresponding author:** To be confirmed before journal submission.
+**First author and corresponding author:** Santosh Sadashiv Todkar
 
 > **Working manuscript format:** This Markdown manuscript is intentionally maintained in a single-column, plagiarism-check-friendly form at this stage. JAI's final production/submission layout is separate; the current single-column form is for originality screening and manuscript review before later template conversion.
 
@@ -459,4 +458,4 @@ The authors thank the open-source Spider benchmark and evaluation ecosystem and 
 
 ## Submission-control note
 
-This version is intentionally **single-column and plagiarism-check friendly**. It is not yet the journal's final double-column production layout. After the plagiarism/originality check, the manuscript should be transferred into the current JAI/Elsevier editable submission format. At that stage, the corresponding-author designation, final postal details, figures/tables, biographies/photos, pagination, and final reference audit will be completed.
+This version is intentionally **single-column and plagiarism-check friendly**. It is not yet the journal's final double-column production layout. After the plagiarism/originality check, the manuscript should be transferred into the current JAI/Elsevier editable submission format. At that stage, figures/tables, biographies/photos, pagination, and final reference audit will be completed.
