@@ -20,10 +20,11 @@
 - [x] Remaining arXiv references are retained only where no stronger formal publication was verified in the audit.
 - [x] Gartner sources include full URLs and access dates where retained.
 - [x] Data/code availability statements added.
-- [x] Funding section added using JAI's recommended no-funding wording as the author-verification alternative.
-- [x] Competing-interest section added with explicit author verification requirement.
+- [x] Funding declaration updated to **No funding was received for this research**.
+- [x] Competing-interest declaration updated to **The authors declare that they have no competing interests**.
 - [x] Generative-AI writing declaration added because AI-assisted writing was used.
-- [x] Author-contribution section added.
+- [x] Author-contribution section defined for both authors.
+- [x] Digvijay Bhosale's supplied contribution is recorded as manuscript review/editing and validation/insights concerning experimental findings.
 - [x] Acknowledgements section added.
 - [x] Historical holdout-ordering limitation disclosed.
 - [x] Spider-to-enterprise transfer limitation disclosed.
@@ -32,37 +33,57 @@
 - [x] No universal routing/verification/enterprise-readiness claim retained.
 - [x] Defensibility Layer explicitly bounded as auditability-supporting infrastructure, not legal compliance or institutional accountability.
 
-## Author-specific items that must not be invented
+## Author details recorded
 
-The following require factual author input before submission:
+### First author
 
-1. Exact affiliation and full postal address where the work was conducted.
-2. Corresponding-author email address.
-3. Author biography and personal photograph, as required for a Full-length Research Article.
-4. Funding declaration: confirm whether the work received any specific grant/funding.
-5. Competing-interest declaration: confirm whether any financial/personal relationship could have influenced the work.
-6. Final ORCID, if the author elects to provide it.
+**Santosh Sadashiv Todkar**  
+AI Engineer, Acronotics Private Limited, Bangalore, India  
+Email: santoshmh09@gmail.com  
+ORCID: 0000-0002-7154-3331
 
-These are intentionally not guessed or fabricated in the manuscript.
+### Second author
+
+**Digvijay Bhosale**  
+Research Coordinator  
+Email: digvijay_bhonsale@yahoo.co.in  
+ORCID: 0000-0002-0432-6791
+
+## Remaining author-specific items that must not be invented
+
+1. Exact full postal address for Acronotics Private Limited, Bangalore, India.
+2. If “Research Coordinator” is a designation rather than the institutional affiliation, Digvijay Bhosale's institutional affiliation and full postal address.
+3. Explicit corresponding-author designation and corresponding-author full postal address.
+4. Final CRediT confirmation by both authors. Current allocation: Santosh — all research/project tasks; Digvijay — Writing – Review & Editing and Validation, including experimental findings review/insights.
+5. Author biographies and personal photographs, required for a Full-length Research Article.
+
+No affiliation, postal address, corresponding-author designation, biography, photograph, or additional contribution is invented.
 
 ## Submission-format items
 
 - [ ] Transfer the canonical Markdown manuscript into the current JAI/Elsevier editable Word or LaTeX template.
-- [ ] Render the actual double-column manuscript and confirm no more than 20 pages including biography/photo.
+- [ ] Integrate the finalized two-author title page and declarations into that editable manuscript.
+- [ ] Render the actual double-column manuscript and confirm no more than 20 pages including biographies/photos.
 - [ ] Verify all figures, captions, tables, titles, footnotes and in-text figure/table citations.
 - [ ] Run a final bidirectional citation/reference audit after pagination/template conversion.
 - [ ] Verify all remaining arXiv statuses immediately before submission because 2026 publication status can change.
-- [ ] Verify the final Gartner URL for the observability reference immediately before submission.
+- [x] Verify the final Gartner observability URL: https://www.gartner.com/en/documents/8271421.
 - [ ] Spell-check and grammar-check the final editable manuscript.
 - [ ] Remove any template/placeholder text before upload.
 
 ## Canonical files
 
 - `paper/PROJECT1_JAI_FINAL_MANUSCRIPT.md` — canonical scientific/content revision.
+- `paper/JAI_TITLE_PAGE_AND_AUTHOR_DECLARATIONS.md` — verified author metadata and declarations.
 - `docs/JAI_REFERENCE_AUDIT.md` — reference provenance and arXiv-to-publication audit.
 - `docs/JAI_SUBMISSION_CHECKLIST.md` — this compliance checklist.
-- `paper/PROJECT1_SUBMISSION_READY.md` — historical submission draft; do not treat it as the canonical JAI version until the final template transfer is completed.
+- `paper/PROJECT1_SUBMISSION_READY.md` — historical submission draft; do not treat it as the canonical JAI version until final template transfer is completed.
 
 ## Scientific integrity rule
 
 Do not delete the broader 53-paper research corpus merely to reduce arXiv references. The corpus is part of the novelty-threat/provenance record. The final JAI bibliography is a curated set of sources directly supporting the submitted manuscript.
+
+## Current audit verdict
+
+**Scientific/content audit: PASS with bounded limitations.**  
+**JAI submission-format audit: NOT YET SUBMISSION-READY.** The remaining blockers are author postal/affiliation details, corresponding-author confirmation, biographies/photos, final editable-template conversion, final pagination, and final pre-submission reference/status checks.
