@@ -1,0 +1,31 @@
+name: One-off journal literature wiring
+
+on:
+  push:
+    branches:
+      - research/jai-literature-expansion
+
+permissions:
+  contents: write
+
+jobs:
+  patch-manuscript:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Wire verified journal literature
+        run: python scripts/wire_journal_literature.py
+
+      - name: Commit manuscript update
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add paper/PROJECT1_JAI_FINAL_MANUSCRIPT.md
+          git diff --cached --check
+          git commit -m "Research: wire literature from three target journals"
+          git push
