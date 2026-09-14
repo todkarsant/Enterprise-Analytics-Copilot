@@ -12,13 +12,13 @@ Email: santoshmh09@gmail.com
 ORCID: https://orcid.org/0000-0002-7154-3331
 
 **Digvijay Bhosale**²  
-Affiliation: **To be supplied by author**  
+**Research Coordinator**  
 Email: digvijay_bhonsale@yahoo.co.in  
 ORCID: https://orcid.org/0000-0002-0432-6791
 
 ¹ The exact full postal address of Acronotics Private Limited at which the research was conducted must be supplied before submission. JAI requires the affiliation address where the work was actually performed, including the country.
 
-² JAI requires the affiliation address where the work was actually performed. No affiliation has been supplied for Digvijay Bhosale, so none is invented here.
+² “Research Coordinator” is recorded exactly as supplied by the author. If this is a job title rather than the institutional affiliation, the institutional name and full postal address must still be supplied before submission. No institution is invented here.
 
 ## Corresponding author
 
@@ -28,31 +28,32 @@ ORCID: https://orcid.org/0000-0002-0432-6791
 
 Both supplied ORCID identifiers are structurally valid 16-digit ORCID identifiers. Direct public-record pages are JavaScript-rendered in the verification environment, so this audit does **not** claim independent verification that the public registry records currently display the supplied names. The identifiers themselves should be entered in the JAI submission system exactly as supplied.
 
-## Authorship and CRediT confirmation required
+## Authorship and CRediT confirmation
 
-JAI states that all authors should have made substantial contributions to the conception/design or data acquisition/analysis/interpretation, contributed to drafting or critical revision, approved the final version, and agreed to accountability for the work.
+The authors supplied the following contribution allocation:
 
-The current research history documents substantial first-author ownership of the Project 1 implementation and analysis, but it does not provide sufficient evidence to assign specific CRediT roles to Digvijay Bhosale. Therefore **no CRediT role is invented for the second author**.
+- **Santosh Sadashiv Todkar:** all research, implementation, analysis, experimental execution, manuscript preparation, and related project tasks except the second-author contributions stated below.
+- **Digvijay Bhosale:** **manuscript review and editing; validation of experimental findings and experimental findings insights.**
 
-Before submission, the authors should jointly confirm the actual roles. The final manuscript should then replace the provisional contribution statement with the agreed CRediT allocation.
+For the JAI/CRediT declaration, Digvijay's role is represented as **Writing — Review & Editing** and **Validation**, with the experimental findings insights reflected in the validation/review contribution. The authors should confirm the final taxonomy labels in the submission system.
+
+Both authors should also confirm final approval of the manuscript and accountability for the work before submission.
 
 ## Funding
 
-**Author confirmation required.** If no specific funding supported the research or manuscript preparation, JAI's recommended wording is:
+**No funding was received for this research.**
+
+Recommended submission wording:
 
 > This research did not receive any specific grant from funding agencies in the public, commercial, or not-for-profit sectors.
 
 ## Competing interests
 
-**Author confirmation required for both authors.** JAI requires a competing-interests statement from all authors, even when there are no interests to declare.
-
-If both authors confirm that no financial or personal relationships could have inappropriately influenced the work, the manuscript can state:
-
-> The authors declare no competing financial or personal interests that could have influenced this work.
+**The authors declare that they have no competing interests.**
 
 ## Generative-AI declaration
 
-The manuscript already contains a declaration that generative AI was used for writing assistance. This is consistent with JAI's current policy, provided the authors reviewed and edited the output and accept full responsibility for the final manuscript.
+The manuscript should retain its existing generative-AI disclosure. The authors remain responsible for reviewing, editing, and approving the final manuscript and for the accuracy of its content.
 
 ## JAI title-page compliance audit
 
@@ -66,5 +67,13 @@ The current JAI Guide for Authors requires:
 - designated corresponding author with email and full postal address;
 - ORCID IDs are supported and encouraged;
 - biographies and personal photos for all authors of a Full-length Research Article.
+
+### Remaining author-side blockers
+
+1. Supply the exact full postal address for Acronotics Private Limited, Bangalore, India.
+2. If “Research Coordinator” is a designation rather than an institutional affiliation, supply Digvijay Bhosale's institutional affiliation and full postal address.
+3. Confirm the corresponding author and corresponding-author postal address.
+4. Confirm the final CRediT allocation and final manuscript approval/accountability by both authors.
+5. Supply author biographies and personal photographs if required by the final JAI submission format.
 
 Source checked: Journal of Automation and Intelligence Guide for Authors, accessed 14 September 2026.
