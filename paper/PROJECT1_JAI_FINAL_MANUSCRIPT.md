@@ -1,9 +1,20 @@
 # When Evidence Is Not Enough: Replacement Decisions in Analytical AI Agents
 
-**Author:** Santosh S. Todkar  
-**Affiliation:** *Author to complete the affiliation and full postal address required by JAI*  
-**Corresponding author:** Santosh S. Todkar  
-**E-mail:** *Author to supply*  
+**Santosh Sadashiv Todkar**¹  
+AI Engineer, Acronotics Private Limited  
+507, HBR layout, 1st Stage, 4th Block, Outer Ring Road, Bengaluru 560043, India  
+Email: santoshmh09@gmail.com  
+ORCID: https://orcid.org/0000-0002-7154-3331
+
+**Digvijay Bhosale**²  
+Department of Mechanical Engineering, Dr. D. Y. Patil Institute of Technology, Pune, India  
+Email: digvijay_bhonsale@yahoo.co.in  
+ORCID: https://orcid.org/0000-0002-0432-6791
+
+**First author:** Santosh Sadashiv Todkar  
+**Corresponding author:** To be confirmed before journal submission.
+
+> **Working manuscript format:** This Markdown manuscript is intentionally maintained in a single-column, plagiarism-check-friendly form at this stage. JAI's final production/submission layout is separate; the current single-column form is for originality screening and manuscript review before later template conversion.
 
 ## Abstract
 
@@ -354,23 +365,27 @@ Source code, evaluation scripts, policy implementations, tests, workflow definit
 
 ## 9. Funding
 
-**Funding:** *Author verification required. If this work received no specific funding, replace this line with: “This research did not receive any specific grant from funding agencies in the public, commercial, or not-for-profit sectors.”*
+**Funding:** This research did not receive any specific grant from funding agencies in the public, commercial, or not-for-profit sectors.
 
 ## 10. Declaration of Competing Interest
 
-**Competing interests:** *Author verification required. If there are no financial or personal relationships that could have influenced this work, use: “The author declares no competing financial or personal interests that could have influenced this work.”*
+**Competing interests:** The authors declare that they have no competing financial or personal interests that could have influenced this work.
 
 ## 11. Declaration of Generative AI and AI-Assisted Technologies in the Writing Process
 
-During preparation of this manuscript, the author used OpenAI ChatGPT to assist with language editing, structural revision and preparation of publication-oriented text. The author reviewed and edited the resulting material and takes full responsibility for the accuracy, integrity and final content of the manuscript.
+During preparation of this manuscript, the authors used OpenAI ChatGPT to assist with language editing, structural revision and preparation of publication-oriented text. The authors reviewed and edited the resulting material and take full responsibility for the accuracy, integrity and final content of the manuscript.
 
 ## 12. Author Contributions
 
-Santosh S. Todkar: Conceptualization; Methodology; Software; Investigation; Formal analysis; Validation; Data curation; Visualization; Writing – original draft; Writing – review & editing; Project administration.
+**Santosh Sadashiv Todkar:** Conceptualization; Methodology; Software; Investigation; Formal analysis; Data curation; Visualization; Writing – original draft; Project administration; and overall experimental execution and research coordination.
+
+**Digvijay Bhosale:** Validation; Writing – review & editing; review of experimental findings; and contribution of insights concerning interpretation and validation of the experimental findings.
+
+Both authors reviewed and approved the manuscript for submission and agree to be accountable for the work.
 
 ## 13. Acknowledgements
 
-The author thanks the open-source Spider benchmark and evaluation ecosystem and the maintainers of the tools used to reproduce the controlled experiments. No external scientific claim is attributed to these resources beyond their documented role in the experiment.
+The authors thank the open-source Spider benchmark and evaluation ecosystem and the maintainers of the tools used to reproduce the controlled experiments. No external scientific claim is attributed to these resources beyond their documented role in the experiment.
 
 ## References
 
@@ -440,8 +455,8 @@ The author thanks the open-source Spider benchmark and evaluation ecosystem and 
 
 [33] Gartner, “Use This Framework to Evaluate AI Agents,” June 26, 2026. https://www.gartner.com/en/documents/8061133. Accessed September 14, 2026.
 
-[34] Gartner, “Observability Is a Must for Custom AI Agents and Multiagent Systems,” August 17, 2026. *Final publisher URL to be verified immediately before submission.*
+[34] Gartner, “Observability Is a Must for Custom AI Agents and Multiagent Systems,” August 17, 2026. https://www.gartner.com/en/documents/8271421. Accessed September 14, 2026.
 
 ## Submission-control note
 
-This Markdown file is the **canonical JAI-content revision**, not a substitute for the journal's required editable Word/LaTeX submission template. Before submission, the author must transfer the content into the current JAI/Elsevier template, supply the verified affiliation, postal address, corresponding-author email, biography and photograph, verify funding and competing-interest declarations, add final figure/table files and captions, run the final bidirectional citation/reference check, and confirm the rendered manuscript is within JAI's 20-page maximum for a Full-length Research Article.
+This version is intentionally **single-column and plagiarism-check friendly**. It is not yet the journal's final double-column production layout. After the plagiarism/originality check, the manuscript should be transferred into the current JAI/Elsevier editable submission format. At that stage, the corresponding-author designation, final postal details, figures/tables, biographies/photos, pagination, and final reference audit will be completed.
