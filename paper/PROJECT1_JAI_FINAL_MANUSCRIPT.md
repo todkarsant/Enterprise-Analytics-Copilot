@@ -82,25 +82,25 @@ Correctness estimation for Text-to-SQL is already an active research problem. Ma
 
 Reliable Text-to-SQL with Adaptive Abstention treats abstention and human interaction as reliability controls, including statistical treatment of schema-linking uncertainty [6]. Project 1 therefore does not claim to invent safe abstention or uncertainty-aware interaction.
 
-G²SQL is an especially important comparator because it uses a guided and guarded two-stage verification architecture with a Reviewer–Observer mechanism [27]. The verification gate tested here is deliberately much simpler: SQL validity, successful execution, and selected structural checks. Consequently, a negative result for this gate should **not** be interpreted as evidence that stronger verification is ineffective.
+G²SQL is an especially important comparator because it uses a guided and guarded two-stage verification architecture with a Reviewer–Observer mechanism [27]. The verification gate tested here is deliberately much simpler: SQL validity, successful execution, and selected structural checks. Consequently, a negative result for this gate should **not** be interpreted as evidence that stronger verification is ineffective. GradeSQL further illustrates a stronger test-time verification direction by using outcome reward models to rank candidate SQL queries on semantic correctness and schema alignment, reporting gains over execution-based heuristics on Spider and BIRD [35].
 
 ### 2.2 Adaptive computation and cascades
 
 Adaptive computation is also well established. The Coverage Illusion studies post-retrieval escalation in a production RAG system [4]. Compositional Online Learning for Semantic Data Processing Systems makes execution-time decisions and includes semantic SQL cascade routing [5]. Agentic-SQL Revisited provides a published taxonomy and empirical analysis of Text-to-SQL autonomy [9]. ACTS-SQL uses correction, backtracking, execution-based verification and clause-level diagnostics [10]. ZAS-SQL uses failure-derived rules and execution-guided stopping [11], while TAHOE learns reusable hints from debugging and execution experience [20].
 
-Accordingly, the present work does not claim novelty for adaptive routing, post-evidence escalation, cost-aware computation, agentic SQL, or execution-guided correction. These mechanisms form part of the prior-art boundary against which the experiment is interpreted.
+Accordingly, the present work does not claim novelty for adaptive routing, post-evidence escalation, cost-aware computation, agentic SQL, or execution-guided correction. These mechanisms form part of the prior-art boundary against which the experiment is interpreted. Recent Journal of Intelligent Information Systems work also shows that structured multi-agent deliberation can improve performance on some high-complexity tasks while a single agent can remain stronger when retrieval alone is sufficient, reinforcing that additional reasoning should be evaluated conditionally rather than assumed to be beneficial [36].
 
 ### 2.3 Enterprise analytical reliability
 
 Enterprise analytical systems introduce concerns that are not visible in a simple SQL accuracy number. GROUND considers governed semantic definitions, joins, grain, filters, security, and cost rules [7]. Beyond Text-to-SQL describes governed enterprise analytics APIs with permission validation and policy-aware orchestration [13]. RBAC-aware Text-to-SQL benchmarking demonstrates that unrestricted benchmark accuracy can conceal authorization failures [14]. DAB evaluates broader data-agent workloads, while EnterpriseMem-Bench and ABISS examine multi-turn memory and interactive ambiguity respectively [8,21,22].
 
-Other recent work shows that the context supplied to a Text-to-SQL system, and the way schema structure and semantics are represented, can materially affect performance [15–19]. These studies reinforce the need to distinguish the controlled benchmark question from claims about enterprise deployment.
+Other recent work shows that the context supplied to a Text-to-SQL system, and the way schema structure and semantics are represented, can materially affect performance [15–19]. Applied Intelligence research likewise reports that knowledge-graph-extended retrieval can improve robustness and explainability in LLM-based question answering, while weighted verification and ranking can filter generated knowledge prompts before they are supplied to an LLM [37,38]. These studies reinforce the need to distinguish the controlled benchmark question from claims about enterprise deployment.
 
 ### 2.4 Auditability and trustworthy decision-making
 
 Birhane et al. distinguish AI auditing activity from accountability and emphasize the importance of audit design, methodology, and institutional context [28]. Project 1 therefore uses **auditability** in a deliberately limited sense: preserving evidence needed to reconstruct a system decision. It does not claim legal compliance or complete institutional accountability.
 
-Recent Journal of Automation and Intelligence work emphasizes the growing importance of agentic reasoning and trustworthy decision-making, including reliability, robustness, verifiability, safety, and explicit constraints [25,26]. These papers support the broader research framing but do not establish the specific contribution tested here. Similarly, current industry research from Gartner emphasizes reliability, evaluation, observability, defensibility, challenge, transparency, and accountability for AI agents [29–34]. These sources are used as industry-context evidence rather than as evidence of academic novelty.
+Recent Journal of Automation and Intelligence work emphasizes the growing importance of agentic reasoning and trustworthy decision-making, including reliability, robustness, verifiability, safety, and explicit constraints [25,26]. These papers support the broader research framing but do not establish the specific contribution tested here. IEEE Transactions on Artificial Intelligence research also highlights that benchmark integrity, evaluator diversity, implementation consistency, and measurement methodology can materially affect conclusions about LLM capability [39]. In a different verification-oriented setting, TrumorGPT uses graph-based retrieval and semantic reasoning for fact-checking, illustrating how external evidence can be incorporated to address hallucination and improve factual verification [40]. Similarly, current industry research from Gartner emphasizes reliability, evaluation, observability, defensibility, challenge, transparency, and accountability for AI agents [29–34]. These sources are used as industry-context evidence rather than as evidence of academic novelty.
 
 ### 2.5 The narrow gap
 
@@ -611,6 +611,18 @@ The authors thank the open-source Spider benchmark and evaluation ecosystem and 
 [33] Gartner, “Use This Framework to Evaluate AI Agents,” June 26, 2026. https://www.gartner.com/en/documents/8061133. Accessed September 14, 2026.
 
 [34] Gartner, “Observability Is a Must for Custom AI Agents and Multiagent Systems,” August 17, 2026. https://www.gartner.com/en/documents/8271421. Accessed September 14, 2026.
+
+[35] M. Tritto, G. Farano, D. Di Palma, G. Rossiello, D. Subramanian, F. Narducci, and T. Di Noia, “GradeSQL: Outcome reward models for intelligent Text-to-SQL generation from LLMs,” Journal of Intelligent Information Systems, 2026, https://doi.org/10.1007/s10844-026-01071-6.
+
+[36] S. Gómez Álvarez, A. Mozo Quesada, T. Navarro, S. Gálvez Rojas, and F. López Valverde, “Multi-Agent debate system based on large language models: structured deliberation and validation in satellite communications,” Journal of Intelligent Information Systems, 2026, https://doi.org/10.1007/s10844-026-01086-z.
+
+[37] B. Gülmez, “Code generation with large language models: a survey from neural program synthesis to autonomous software development,” Applied Intelligence, vol. 56, Art. 200, 2026, https://doi.org/10.1007/s10489-026-07230-0.
+
+[38] X. Li, S. Peng, S. Yada, S. Wakamiya, and E. Aramaki, “GenKP: generative knowledge prompts for enhancing large language models,” Applied Intelligence, vol. 55, Art. 464, 2025, https://doi.org/10.1007/s10489-025-06318-3.
+
+[39] T. R. McIntosh, T. Susnjak, N. Arachchilage, T. Liu, D. Xu, P. Watters, and M. N. Halgamuge, “Inadequacies of Large Language Model Benchmarks in the Era of Generative Artificial Intelligence,” IEEE Transactions on Artificial Intelligence, vol. 7, no. 1, pp. 22–39, 2026, https://doi.org/10.1109/TAI.2025.3569516.
+
+[40] C. N. Hang, P.-D. Yu, and C. W. Tan, “TrumorGPT: Graph-Based Retrieval-Augmented Large Language Model for Fact-Checking,” IEEE Transactions on Artificial Intelligence, vol. 6, no. 11, pp. 3148–3162, 2025, https://doi.org/10.1109/TAI.2025.3567369.
 
 ## Submission-control note
 
