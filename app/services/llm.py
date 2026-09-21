@@ -106,10 +106,12 @@ WHERE week_start >= date((SELECT MAX(week_start) FROM store_week), 'start of mon
         return LLMResult(f"The query returned {len(rows)} row(s).", model="mock")
 
 class OllamaProvider(LLMProvider):
-    def __init__(self, base_url: str, model: str, timeout_seconds: int = 120):
+    def __init__(self, base_url: str, model: str, timeout_seconds: int | None = None):
         self.url = base_url.rstrip("/") + "/api/chat"
         self.model = model
-        self.timeout = timeout_seconds
+        # Transport-only control: preserves prompt/model semantics while allowing
+        # the pinned research runtime to set a workload-appropriate HTTP timeout.
+        self.timeout = timeout_seconds if timeout_seconds is not None else int(os.getenv("OLLAMA_TIMEOUT_SECONDS", "120"))
 
     def _chat(self, prompt: str) -> LLMResult:
         payload = {"model": self.model, "messages": [{"role": "user", "content": prompt}], "stream": False, "format": "json", "options": {"temperature": 0}}
